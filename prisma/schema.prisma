@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("USER")
+  avatarUrl    String?
+  bannerUrl    String?
+  pixKeyRandom String?
+  pixKeyPhone  String?
+  pixKeyEmail  String?
+  pixKeyCpf    String?
+  phone        String?
+  cep          String?
+  state        String?
+  city         String?
+  neighborhood String?
+  street       String?
+  houseNumber  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Project {
+  id             String           @id @default(cuid())
+  title          String
+  shortDescription String?
+  description    String?
+  category       String?
+  status         String           @default("proposed")
+  imageUrl       String?
+  evidences      String[]         @default([])
+
+  targetAmount   Float            @default(0)
+  currentAmount  Float            @default(0)
+  minVotes       Int              @default(10)
+  votesCount     Int              @default(0)
+  fundingDeadline DateTime?
+
+  ownerId        String?
+  ownerEmail     String?
+
+  expensesTotal  Float            @default(0)
+
+  expenses       ProjectExpense[]
+  votes          ProjectVote[]
+  payments       ProjectPayment[]
+
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model ProjectExpense {
+  id          String   @id @default(cuid())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+
+  type        String
+  description String?
+  cost        Float
+  quantity    Int
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProjectVote {
+  id         String   @id @default(cuid())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId  String
+
+  userId     String?
+  userEmail  String?
+  type       String   @default("up") // 'up' ou 'down'
+
+  createdAt  DateTime @default(now())
+}
+
+model ProjectPayment {
+  id               String   @id @default(cuid())
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId        String
+
+  userId           String?
+  userEmail        String?
+
+  amount           Float
+  commissionAmount Float?  @default(0)
+  paymentMethod    String
+  status           String
+  isSubscription   Boolean @default(false)
+  anonymous        Boolean @default(false)
+  transactionId    String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model AppSettings {
+  id             Int      @id @default(1)
+  maintenanceMode Boolean @default(false)
+  openSignup      Boolean @default(true)
+  dailySummary    Boolean @default(true)
+  defaultLocale   String  @default("pt-BR")
+  updatedAt       DateTime @updatedAt
+}
+
+model Product {
+  id                String   @id @default(cuid())
+  title             String
+  description       String?
+  price             Float
+  quantityAvailable Int      @default(0)
+  category          String?
+  condition         String?  // novo, usado_otimo, etc.
+  unitType          String?  // unidade, kg, etc.
+  images            String[]
+  active            Boolean  @default(true)
+
+  sellerId          String?
+  sellerEmail       String?
+  sellerName        String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Service {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  price         Float?
+  priceType     String   // hora, diaria, servico, orcamento
+  serviceType   String?  // limpeza, manutencao, etc.
+  images        String[]
+  active        Boolean  @default(true)
+
+  providerId    String?
+  providerEmail String?
+  providerName  String?
+
+  rating        Float?   @default(0)
+  reviewsCount  Int?     @default(0)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+
