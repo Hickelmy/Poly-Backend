@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Backend Polys com NestJS e Prisma",
   "author": "",
-  "license": "MIT",
+  "license": "PROPRIETARY",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
