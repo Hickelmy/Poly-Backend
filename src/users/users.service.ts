@@ -56,6 +56,10 @@ export class UsersService {
         neighborhood: true,
         street: true,
         houseNumber: true,
+        residenceLat: true,
+        residenceLng: true,
+        residenceZoneId: true,
+        currentZoneId: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -65,31 +69,68 @@ export class UsersService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    return user;
+    // Map to frontend format
+    return {
+      ...user,
+      residence_lat: user.residenceLat,
+      residence_lng: user.residenceLng,
+      residence_zone_id: user.residenceZoneId,
+      current_zone_id: user.currentZoneId,
+    };
   }
 
   async update(id: string, dto: UpdateUserDto) {
     await this.ensureExists(id);
 
-    return this.prisma.user.update({
+    const data: any = {
+      name: dto.name,
+      role: dto.role,
+      avatarUrl: dto.avatarUrl,
+      bannerUrl: dto.bannerUrl,
+      pixKeyRandom: dto.pixKeyRandom,
+      pixKeyPhone: dto.pixKeyPhone,
+      pixKeyEmail: dto.pixKeyEmail,
+      pixKeyCpf: dto.pixKeyCpf,
+      phone: dto.phone,
+      cep: dto.cep,
+      state: dto.state,
+      city: dto.city,
+      neighborhood: dto.neighborhood,
+      street: dto.street,
+      houseNumber: dto.houseNumber,
+    };
+
+    // Handle residence fields (snake_case from frontend)
+    if ((dto as any).residence_lat !== undefined) {
+      data.residenceLat = (dto as any).residence_lat;
+    }
+    if ((dto as any).residence_lng !== undefined) {
+      data.residenceLng = (dto as any).residence_lng;
+    }
+    if ((dto as any).residence_zone_id !== undefined) {
+      data.residenceZoneId = (dto as any).residence_zone_id;
+    }
+    if ((dto as any).current_zone_id !== undefined) {
+      data.currentZoneId = (dto as any).current_zone_id;
+    }
+
+    // Also handle camelCase versions
+    if ((dto as any).residenceLat !== undefined) {
+      data.residenceLat = (dto as any).residenceLat;
+    }
+    if ((dto as any).residenceLng !== undefined) {
+      data.residenceLng = (dto as any).residenceLng;
+    }
+    if ((dto as any).residenceZoneId !== undefined) {
+      data.residenceZoneId = (dto as any).residenceZoneId;
+    }
+    if ((dto as any).currentZoneId !== undefined) {
+      data.currentZoneId = (dto as any).currentZoneId;
+    }
+
+    const user = await this.prisma.user.update({
       where: { id },
-      data: {
-        name: dto.name,
-        role: dto.role,
-        avatarUrl: dto.avatarUrl,
-        bannerUrl: dto.bannerUrl,
-        pixKeyRandom: dto.pixKeyRandom,
-        pixKeyPhone: dto.pixKeyPhone,
-        pixKeyEmail: dto.pixKeyEmail,
-        pixKeyCpf: dto.pixKeyCpf,
-        phone: dto.phone,
-        cep: dto.cep,
-        state: dto.state,
-        city: dto.city,
-        neighborhood: dto.neighborhood,
-        street: dto.street,
-        houseNumber: dto.houseNumber,
-      },
+      data,
       select: {
         id: true,
         email: true,
@@ -108,10 +149,22 @@ export class UsersService {
         neighborhood: true,
         street: true,
         houseNumber: true,
+        residenceLat: true,
+        residenceLng: true,
+        residenceZoneId: true,
+        currentZoneId: true,
         createdAt: true,
         updatedAt: true,
       },
     });
+
+    return {
+      ...user,
+      residence_lat: user.residenceLat,
+      residence_lng: user.residenceLng,
+      residence_zone_id: user.residenceZoneId,
+      current_zone_id: user.currentZoneId,
+    };
   }
 
   async remove(id: string) {

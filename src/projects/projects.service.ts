@@ -21,6 +21,7 @@ export class ProjectsService {
       if (key === 'status') prismaKey = 'status';
       if (key === 'owner_id') prismaKey = 'ownerId';
       if (key === 'owner_email') prismaKey = 'ownerEmail';
+      if (key === 'zone_id') prismaKey = 'zoneId';
 
       if (key === 'project_id') prismaKey = 'projectId';
 
@@ -43,7 +44,12 @@ export class ProjectsService {
       const desc = sort.startsWith('-');
       const field = desc ? sort.slice(1) : sort;
       let prismaField = field;
-      if (field === 'created_date') prismaField = 'createdAt';
+      // Mapear campos do frontend para campos do Prisma
+      if (field === 'created_date' || field === 'recent') prismaField = 'createdAt';
+      if (field === 'updated_date') prismaField = 'updatedAt';
+      if (field === 'target_amount') prismaField = 'targetAmount';
+      if (field === 'current_amount') prismaField = 'currentAmount';
+      if (field === 'votes_count') prismaField = 'votesCount';
       orderBy = { [prismaField]: desc ? 'desc' : 'asc' };
     }
 
@@ -79,6 +85,12 @@ export class ProjectsService {
         funding_deadline: p.fundingDeadline,
         owner_id: p.ownerId,
         owner_email: p.ownerEmail,
+        location_address: p.locationAddress,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        lat: p.latitude, // Alias for map compatibility
+        lng: p.longitude,
+        zone_id: p.zoneId,
         expenses_total: p.expensesTotal,
         expenses: p.expenses.map((e) => ({
           ...e,
@@ -122,6 +134,12 @@ export class ProjectsService {
       funding_deadline: project.fundingDeadline,
       owner_id: project.ownerId,
       owner_email: project.ownerEmail,
+      location_address: project.locationAddress,
+      latitude: project.latitude,
+      longitude: project.longitude,
+      lat: project.latitude,
+      lng: project.longitude,
+      zone_id: project.zoneId,
       expenses_total: project.expensesTotal,
       expenses: project.expenses.map((e) => ({
         ...e,
@@ -144,6 +162,12 @@ export class ProjectsService {
       votes_count,
       funding_deadline,
       short_description,
+      location_address,
+      latitude,
+      longitude,
+      zone_id,
+      lat,
+      lng,
       evidences,
       ...rest
     } = data;
@@ -163,6 +187,9 @@ export class ProjectsService {
       0,
     );
 
+    const finalLat = latitude ?? lat;
+    const finalLng = longitude ?? lng;
+
     const created = await this.prisma.project.create({
       data: {
         title: rest.title,
@@ -179,6 +206,10 @@ export class ProjectsService {
         fundingDeadline: funding_deadline ? new Date(funding_deadline) : null,
         ownerId: owner_id || user.userId,
         ownerEmail: owner_email || user.email,
+        locationAddress: location_address ?? null,
+        latitude: finalLat ? parseFloat(String(finalLat)) : null,
+        longitude: finalLng ? parseFloat(String(finalLng)) : null,
+        zoneId: zone_id ?? null,
         expensesTotal: expenses_total ?? computedTotal,
         expenses: {
           create: normalizedExpenses,
@@ -206,6 +237,12 @@ export class ProjectsService {
       votes_count,
       funding_deadline,
       short_description,
+      location_address,
+      latitude,
+      longitude,
+      zone_id,
+      lat,
+      lng,
       owner_id,
       owner_email,
       ...rest
@@ -229,6 +266,12 @@ export class ProjectsService {
     }
     if (owner_id !== undefined) updateData.ownerId = owner_id;
     if (owner_email !== undefined) updateData.ownerEmail = owner_email;
+    if (location_address !== undefined) updateData.locationAddress = location_address;
+    if (latitude !== undefined) updateData.latitude = latitude ? parseFloat(String(latitude)) : null;
+    if (longitude !== undefined) updateData.longitude = longitude ? parseFloat(String(longitude)) : null;
+    if (lat !== undefined) updateData.latitude = lat ? parseFloat(String(lat)) : null;
+    if (lng !== undefined) updateData.longitude = lng ? parseFloat(String(lng)) : null;
+    if (zone_id !== undefined) updateData.zoneId = zone_id;
 
     await this.prisma.project.update({
       where: { id },

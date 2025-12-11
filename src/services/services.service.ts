@@ -16,11 +16,12 @@ export class ServicesService {
       let parsed: any = value;
       if (value === 'true' || value === true) parsed = true;
       else if (value === 'false' || value === false) parsed = false;
-      else if (!isNaN(Number(value)) && key !== 'providerEmail') {
+      else if (!isNaN(Number(value)) && key !== 'providerEmail' && key !== 'provider_email' && key !== 'zone_id' && key !== 'zoneId') {
         parsed = Number(value);
       }
       let prismaKey = key;
       if (key === 'provider_email') prismaKey = 'providerEmail';
+      if (key === 'zone_id') prismaKey = 'zoneId';
       where[prismaKey] = parsed;
     });
     return where;
@@ -34,7 +35,10 @@ export class ServicesService {
       const desc = sort.startsWith('-');
       const field = desc ? sort.slice(1) : sort;
       let prismaField = field;
-      if (field === 'created_date') prismaField = 'createdAt';
+      // Mapear campos do frontend para campos do Prisma
+      if (field === 'created_date' || field === 'recent') prismaField = 'createdAt';
+      if (field === 'updated_date') prismaField = 'updatedAt';
+      if (field === 'reviews_count') prismaField = 'reviewsCount';
       orderBy = { [prismaField]: desc ? 'desc' : 'asc' };
     }
 
@@ -55,6 +59,7 @@ export class ServicesService {
       reviews_count: s.reviewsCount,
       provider_name: s.providerName,
       provider_email: s.providerEmail,
+      zone_id: s.zoneId,
     }));
   }
 
@@ -71,6 +76,9 @@ export class ServicesService {
         providerId: user.userId,
         providerEmail: user.email,
         providerName: data.provider_name ?? data.providerName ?? user.email,
+        zoneId: data.zone_id ?? data.zoneId ?? null,
+        lat: data.lat ?? null,
+        lng: data.lng ?? null,
       },
     });
     return {
@@ -81,6 +89,7 @@ export class ServicesService {
       reviews_count: created.reviewsCount,
       provider_name: created.providerName,
       provider_email: created.providerEmail,
+      zone_id: created.zoneId,
     };
   }
 
@@ -100,6 +109,9 @@ export class ServicesService {
         serviceType: data.service_type ?? data.serviceType ?? existing.serviceType,
         images: data.images ?? existing.images,
         active: data.active ?? existing.active,
+        zoneId: data.zone_id ?? data.zoneId ?? existing.zoneId,
+        lat: data.lat ?? existing.lat,
+        lng: data.lng ?? existing.lng,
       },
     });
 
@@ -111,6 +123,7 @@ export class ServicesService {
       reviews_count: updated.reviewsCount,
       provider_name: updated.providerName,
       provider_email: updated.providerEmail,
+      zone_id: updated.zoneId,
     };
   }
 

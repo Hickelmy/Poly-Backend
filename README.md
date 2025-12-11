@@ -46,7 +46,7 @@ cp env-example .env
 PORT=3001
 DATABASE_URL="postgresql://user:password@localhost:5432/polys_db?schema=public"
 JWT_SECRET="sua-chave-secreta-aqui"
-JWT_EXPIRES_IN="1h"
+JWT_EXPIRES_IN="30d"
 CORS_ORIGIN=*
 ```
 

@@ -26,8 +26,52 @@ model User {
   neighborhood String?
   street       String?
   houseNumber  String?
+  
+  // Residence location
+  residenceLat    Float?
+  residenceLng    Float?
+  residenceZoneId String?
+  residenceZone   Zone?    @relation("UserResidenceZone", fields: [residenceZoneId], references: [id])
+  
+  // Current zone (for tracking)
+  currentZoneId   String?
+  currentZone     Zone?    @relation("UserCurrentZone", fields: [currentZoneId], references: [id])
+  
+  // News relations
+  authoredNews    News[]        @relation("NewsAuthor")
+  newsLikes       NewsLike[]    @relation("UserNewsLikes")
+  newsComments    NewsComment[] @relation("UserNewsComments")
+  newsReports     NewsReport[]  @relation("UserNewsReports")
+  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// Zonas/Áreas da comunidade
+model Zone {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String?  @default("#14b8a6")
+  active      Boolean  @default(true)
+  
+  // Polygon coordinates in GeoJSON format
+  polygonGeojson Json?
+  
+  // Center point for quick reference
+  centerLat   Float?
+  centerLng   Float?
+  
+  // Relations
+  residenceUsers User[] @relation("UserResidenceZone")
+  currentUsers   User[] @relation("UserCurrentZone")
+  products       Product[]
+  services       Service[]
+  projects       Project[]
+  news           News[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Project {
@@ -48,6 +92,14 @@ model Project {
 
   ownerId        String?
   ownerEmail     String?
+
+  locationAddress String?
+  latitude        Float?
+  longitude       Float?
+  
+  // Zone/Area association
+  zoneId         String?
+  zone           Zone?            @relation(fields: [zoneId], references: [id])
 
   expensesTotal  Float            @default(0)
 
@@ -114,6 +166,18 @@ model AppSettings {
   updatedAt       DateTime @updatedAt
 }
 
+model ApiToken {
+  id          String   @id @default(cuid())
+  name        String   // Nome do serviço (ex: "Abacate Pay", "Stripe")
+  provider    String   // Identificador do provedor (ex: "abacate_pay", "stripe")
+  token       String   // Token da API (criptografado em produção)
+  description String?  // Descrição opcional
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) // Ordem de exibição
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Product {
   id                String   @id @default(cuid())
   title             String
@@ -129,6 +193,12 @@ model Product {
   sellerId          String?
   sellerEmail       String?
   sellerName        String?
+  
+  // Zone/Area association
+  zoneId            String?
+  zone              Zone?    @relation(fields: [zoneId], references: [id])
+  lat               Float?
+  lng               Float?
 
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -147,12 +217,90 @@ model Service {
   providerId    String?
   providerEmail String?
   providerName  String?
+  
+  // Zone/Area association
+  zoneId        String?
+  zone          Zone?    @relation(fields: [zoneId], references: [id])
+  lat           Float?
+  lng           Float?
 
   rating        Float?   @default(0)
   reviewsCount  Int?     @default(0)
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// Notícias/Informações da comunidade
+model News {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  summary     String?
+  imageUrl    String?
+  images      String[]
+  
+  // Autor (Admin/Manager)
+  authorId    String
+  author      User     @relation("NewsAuthor", fields: [authorId], references: [id])
+  
+  // Zone/Area association
+  zoneId      String?
+  zone        Zone?    @relation(fields: [zoneId], references: [id])
+  
+  isPublished Boolean  @default(true)
+  isPinned    Boolean  @default(false)
+  publishedAt DateTime?
+  
+  // Engajamento
+  likesCount    Int @default(0)
+  commentsCount Int @default(0)
+  reportsCount  Int @default(0)
+  
+  // Relações
+  likes    NewsLike[]
+  comments NewsComment[]
+  reports  NewsReport[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model NewsLike {
+  id        String   @id @default(cuid())
+  newsId    String
+  news      News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("UserNewsLikes", fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  
+  @@unique([newsId, userId])
+}
+
+model NewsComment {
+  id        String   @id @default(cuid())
+  newsId    String
+  news      News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("UserNewsComments", fields: [userId], references: [id])
+  content   String
+  
+  likesCount Int @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model NewsReport {
+  id          String   @id @default(cuid())
+  newsId      String
+  news        News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation("UserNewsReports", fields: [userId], references: [id])
+  reason      String
+  description String?
+  status      String   @default("pending") // pending, reviewed, dismissed
+  createdAt   DateTime @default(now())
 }
 
 

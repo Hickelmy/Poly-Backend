@@ -16,11 +16,12 @@ export class ProductsService {
       let parsed: any = value;
       if (value === 'true' || value === true) parsed = true;
       else if (value === 'false' || value === false) parsed = false;
-      else if (!isNaN(Number(value)) && key !== 'sellerEmail') {
+      else if (!isNaN(Number(value)) && key !== 'sellerEmail' && key !== 'seller_email' && key !== 'zone_id' && key !== 'zoneId') {
         parsed = Number(value);
       }
       let prismaKey = key;
       if (key === 'seller_email') prismaKey = 'sellerEmail';
+      if (key === 'zone_id') prismaKey = 'zoneId';
       where[prismaKey] = parsed;
     });
     return where;
@@ -34,7 +35,10 @@ export class ProductsService {
       const desc = sort.startsWith('-');
       const field = desc ? sort.slice(1) : sort;
       let prismaField = field;
-      if (field === 'created_date') prismaField = 'createdAt';
+      // Mapear campos do frontend para campos do Prisma
+      if (field === 'created_date' || field === 'recent') prismaField = 'createdAt';
+      if (field === 'updated_date') prismaField = 'updatedAt';
+      if (field === 'quantity_available') prismaField = 'quantityAvailable';
       orderBy = { [prismaField]: desc ? 'desc' : 'asc' };
     }
 
@@ -54,6 +58,7 @@ export class ProductsService {
       unit_type: p.unitType,
       seller_name: p.sellerName,
       seller_email: p.sellerEmail,
+      zone_id: p.zoneId,
     }));
   }
 
@@ -72,6 +77,9 @@ export class ProductsService {
         sellerId: user.userId,
         sellerEmail: user.email,
         sellerName: data.seller_name ?? data.sellerName ?? data.seller_email ?? user.email,
+        zoneId: data.zone_id ?? data.zoneId ?? null,
+        lat: data.lat ?? null,
+        lng: data.lng ?? null,
       },
     });
     return {
@@ -81,6 +89,7 @@ export class ProductsService {
       unit_type: created.unitType,
       seller_name: created.sellerName,
       seller_email: created.sellerEmail,
+      zone_id: created.zoneId,
     };
   }
 
@@ -103,6 +112,9 @@ export class ProductsService {
         unitType: data.unit_type ?? data.unitType ?? existing.unitType,
         images: data.images ?? existing.images,
         active: data.active ?? existing.active,
+        zoneId: data.zone_id ?? data.zoneId ?? existing.zoneId,
+        lat: data.lat ?? existing.lat,
+        lng: data.lng ?? existing.lng,
       },
     });
 
@@ -113,6 +125,7 @@ export class ProductsService {
       unit_type: updated.unitType,
       seller_name: updated.sellerName,
       seller_email: updated.sellerEmail,
+      zone_id: updated.zoneId,
     };
   }
 

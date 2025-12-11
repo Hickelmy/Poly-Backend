@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+
+const MIN_PAYMENT_AMOUNT = 20;
 
 export interface ProjectPaymentFilter {
   [key: string]: any;
@@ -62,12 +64,22 @@ export class ProjectPaymentsService {
   }
 
   async create(data: any) {
+    const amount = parseFloat(data.amount);
+    
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Valor inválido');
+    }
+
+    if (amount < MIN_PAYMENT_AMOUNT) {
+      throw new BadRequestException(`O valor mínimo para pagamento é R$ ${MIN_PAYMENT_AMOUNT.toFixed(2)}`);
+    }
+
     const created = await this.prisma.projectPayment.create({
       data: {
         projectId: data.project_id,
         userId: data.user_id ?? null,
         userEmail: data.user_email ?? null,
-        amount: data.amount,
+        amount: amount,
         commissionAmount: data.commission_amount ?? 0,
         paymentMethod: data.payment_method,
         status: data.status ?? 'pending',
@@ -99,7 +111,16 @@ export class ProjectPaymentsService {
 
     const updateData: any = {};
 
-    if (data.amount !== undefined) updateData.amount = data.amount;
+    if (data.amount !== undefined) {
+      const amount = parseFloat(data.amount);
+      if (!amount || amount <= 0) {
+        throw new BadRequestException('Valor inválido');
+      }
+      if (amount < MIN_PAYMENT_AMOUNT) {
+        throw new BadRequestException(`O valor mínimo para pagamento é R$ ${MIN_PAYMENT_AMOUNT.toFixed(2)}`);
+      }
+      updateData.amount = amount;
+    }
     if (data.commission_amount !== undefined)
       updateData.commissionAmount = data.commission_amount;
     if (data.payment_method !== undefined)

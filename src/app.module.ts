@@ -13,6 +13,10 @@ import { ServicesModule } from './services/services.module';
 import { ProjectsModule } from './projects/projects.module';
 import { ProjectVotesModule } from './project-votes/project-votes.module';
 import { ProjectPaymentsModule } from './project-payments/project-payments.module';
+import { ApiTokensModule } from './api-tokens/api-tokens.module';
+import { PaymentGatewayModule } from './payment-gateway/payment-gateway.module';
+import { ZonesModule } from './zones/zones.module';
+import { NewsModule } from './news/news.module';
 
 @Module({
   imports: [
@@ -34,6 +38,10 @@ import { ProjectPaymentsModule } from './project-payments/project-payments.modul
     ProjectsModule,
     ProjectVotesModule,
     ProjectPaymentsModule,
+    ApiTokensModule,
+    PaymentGatewayModule,
+    ZonesModule,
+    NewsModule,
   ],
   controllers: [AppController],
   providers: [
