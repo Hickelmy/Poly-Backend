@@ -3,10 +3,14 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { EncryptionService } from '../common/encryption.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly encryptionService: EncryptionService,
+  ) {}
 
   async create(dto: CreateUserDto) {
     const existing = await this.prisma.user.findUnique({
@@ -19,13 +23,26 @@ export class UsersService {
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
+    // Os dados sensíveis já vêm criptografados do frontend
+    // Apenas salvamos no banco (a descriptografia acontece no findOne)
+    const userData: any = {
+      email: dto.email,
+      passwordHash,
+      name: dto.name,
+      role: dto.role || 'USER',
+    };
+
+    // Adiciona campos de endereço se fornecidos (já criptografados)
+    if (dto.phone) userData.phone = dto.phone;
+    if (dto.cep) userData.cep = dto.cep;
+    if (dto.state) userData.state = dto.state;
+    if (dto.city) userData.city = dto.city;
+    if (dto.neighborhood) userData.neighborhood = dto.neighborhood;
+    if (dto.street) userData.street = dto.street;
+    if (dto.houseNumber) userData.houseNumber = dto.houseNumber;
+
     return this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        name: dto.name,
-        role: dto.role || 'USER',
-      },
+      data: userData,
     });
   }
 
@@ -69,19 +86,46 @@ export class UsersService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
+    // Descriptografa campos sensíveis
+    const sensitiveFields = [
+      'phone',
+      'cep',
+      'street',
+      'houseNumber',
+      'neighborhood',
+      'pixKeyRandom',
+      'pixKeyPhone',
+      'pixKeyEmail',
+      'pixKeyCpf',
+    ];
+
+    const decryptedUser = await this.encryptionService.decryptObject(
+      user,
+      sensitiveFields,
+      user.email,
+    );
+
     // Map to frontend format
     return {
-      ...user,
-      residence_lat: user.residenceLat,
-      residence_lng: user.residenceLng,
-      residence_zone_id: user.residenceZoneId,
-      current_zone_id: user.currentZoneId,
+      ...decryptedUser,
+      residence_lat: decryptedUser.residenceLat,
+      residence_lng: decryptedUser.residenceLng,
+      residence_zone_id: decryptedUser.residenceZoneId,
+      current_zone_id: decryptedUser.currentZoneId,
     };
   }
 
   async update(id: string, dto: UpdateUserDto) {
     await this.ensureExists(id);
 
+    // Busca o email do usuário para descriptografar se necessário
+    const existingUser = await this.prisma.user.findUnique({
+      where: { id },
+      select: { email: true },
+    });
+
+    // Os dados já vêm criptografados do frontend, então apenas salvamos
+    // A descriptografia acontece no findOne quando os dados são lidos
     const data: any = {
       name: dto.name,
       role: dto.role,
@@ -158,12 +202,31 @@ export class UsersService {
       },
     });
 
+    // Descriptografa campos sensíveis antes de retornar
+    const sensitiveFields = [
+      'phone',
+      'cep',
+      'street',
+      'houseNumber',
+      'neighborhood',
+      'pixKeyRandom',
+      'pixKeyPhone',
+      'pixKeyEmail',
+      'pixKeyCpf',
+    ];
+
+    const decryptedUser = await this.encryptionService.decryptObject(
+      user,
+      sensitiveFields,
+      user.email,
+    );
+
     return {
-      ...user,
-      residence_lat: user.residenceLat,
-      residence_lng: user.residenceLng,
-      residence_zone_id: user.residenceZoneId,
-      current_zone_id: user.currentZoneId,
+      ...decryptedUser,
+      residence_lat: decryptedUser.residenceLat,
+      residence_lng: decryptedUser.residenceLng,
+      residence_zone_id: decryptedUser.residenceZoneId,
+      current_zone_id: decryptedUser.currentZoneId,
     };
   }
 

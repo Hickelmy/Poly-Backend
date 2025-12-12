@@ -43,6 +43,10 @@ model User {
   newsComments    NewsComment[] @relation("UserNewsComments")
   newsReports     NewsReport[]  @relation("UserNewsReports")
   
+  // Payment tokens (cartões tokenizados)
+  paymentTokens   PaymentToken[]
+  orders          Order[]
+  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -151,10 +155,78 @@ model ProjectPayment {
   status           String
   isSubscription   Boolean @default(false)
   anonymous        Boolean @default(false)
-  transactionId    String?
+  
+  // Tokenização - apenas IDs/tokens do gateway, nunca dados sensíveis
+  transactionId    String?  // ID da transação no gateway (ex: billing_id do Abacate Pay)
+  paymentToken     String?  // Token do cartão (se tokenizado pelo gateway)
+  gatewayProvider  String?  // Nome do gateway usado (ex: "abacate_pay", "stripe")
+  
+  // Metadados do pagamento (não sensíveis)
+  installments     Int?     @default(1) // Número de parcelas
+  last4Digits      String?  // Últimos 4 dígitos do cartão (se aplicável, apenas para exibição)
+  cardBrand        String?  // Bandeira do cartão (Visa, Mastercard, etc) - apenas para exibição
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// Tokenização de cartões de crédito (opcional - apenas se o gateway suportar)
+model PaymentToken {
+  id              String   @id @default(cuid())
+  userId          String   // Usuário dono do token
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Informações do token (não sensíveis)
+  tokenId         String   @unique // ID do token no gateway
+  gatewayProvider String   // Nome do gateway (ex: "stripe", "abacate_pay")
+  last4Digits     String?  // Últimos 4 dígitos do cartão
+  cardBrand       String?  // Bandeira do cartão
+  expiryMonth     Int?     // Mês de expiração
+  expiryYear      Int?     // Ano de expiração
+  isDefault       Boolean  @default(false) // Cartão padrão do usuário
+  
+  // Metadados
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([userId])
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  
+  // Cliente
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail       String?
+  
+  // Produto/Serviço
+  productId       String?  // Se for compra de produto
+  serviceId       String?  // Se for contratação de serviço
+  
+  // Valores
+  subtotal        Float
+  shippingCost    Float    @default(0)
+  total           Float
+  
+  // Entrega
+  deliveryMethod  String   // "delivery" ou "pickup"
+  deliveryAddress String?  // Endereço de entrega (criptografado)
+  
+  // Pagamento - apenas tokens
+  paymentMethod   String   // "pix", "credit_card", "debit_card", "boleto"
+  paymentTokenId  String?  // ID do token de pagamento (se usar token salvo)
+  transactionId   String?  // ID da transação no gateway
+  gatewayProvider String?  // Nome do gateway usado
+  
+  // Status
+  status          String   @default("pending") // pending, paid, shipped, delivered, cancelled
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([status])
 }
 
 model AppSettings {

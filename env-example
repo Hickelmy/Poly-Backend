@@ -4,7 +4,15 @@ DATABASE_URL="postgresql://user:password@localhost:5432/polys_db?schema=public"
 JWT_SECRET="troque-esta-chave-por-uma-bem-segura"
 JWT_EXPIRES_IN="30d"
 
+# Chave mestre para criptografia de dados sensíveis
+# Gere uma chave segura com: openssl rand -base64 32
+# IMPORTANTE: Use a MESMA chave no frontend (REACT_APP_ENCRYPTION_MASTER_KEY)
+ENCRYPTION_MASTER_KEY="sua-chave-mestre-super-secreta-aqui"
+
 # Em desenvolvimento pode deixar *, em produção use o domínio do front
 CORS_ORIGIN=*
+
+# URL do frontend (para redirects e callbacks)
+FRONTEND_URL="http://localhost:5173"
 
 

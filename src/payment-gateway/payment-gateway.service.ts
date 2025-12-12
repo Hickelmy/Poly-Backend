@@ -52,15 +52,26 @@ export class PaymentGatewayService {
     private readonly apiTokensService: ApiTokensService,
   ) {}
 
-  // Cria um pagamento via Abacate Pay
+  /**
+   * Cria um pagamento via Abacate Pay
+   * IMPORTANTE: Dados sensíveis de cartão devem ser enviados diretamente do frontend ao gateway
+   * Este método apenas cria a transação e salva o token/ID retornado
+   */
   async createAbacatePayment(data: {
     amount: number; // em reais
-    projectId: string;
-    projectTitle: string;
+    projectId?: string;
+    productId?: string;
+    serviceId?: string;
+    projectTitle?: string;
+    productTitle?: string;
+    serviceTitle?: string;
     userId?: string;
     userEmail: string;
     returnUrl?: string;
     completionUrl?: string;
+    paymentMethod?: string; // 'pix', 'credit_card', etc
+    paymentToken?: string; // Token do cartão (se usar token salvo)
+    installments?: number;
   }) {
     // Busca o primeiro token ativo do Abacate Pay
     const token = await this.apiTokensService.getFullToken('abacate_pay');
@@ -76,24 +87,33 @@ export class PaymentGatewayService {
 
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+    // Determina o título baseado no tipo
+    const title = data.projectTitle || data.productTitle || data.serviceTitle || 'Pagamento';
+    const externalId = data.projectId || data.productId || data.serviceId || 'unknown';
+
     const payload = {
       frequency: 'ONE_TIME',
-      methods: ['PIX'],
+      methods: data.paymentMethod === 'credit_card' ? ['CREDIT_CARD'] : ['PIX'],
       products: [
         {
-          externalId: data.projectId,
-          name: `Doação: ${data.projectTitle}`,
+          externalId: externalId,
+          name: title,
           quantity: 1,
           price: amountInCents,
         },
       ],
-      returnUrl: data.returnUrl || `${baseUrl}/projects/${data.projectId}`,
+      returnUrl: data.returnUrl || `${baseUrl}/payment/return`,
       completionUrl:
         data.completionUrl ||
-        `${baseUrl}/payment/success?project=${data.projectId}`,
+        `${baseUrl}/payment/success`,
       customer: {
         email: data.userEmail,
       },
+      // Se tiver token de cartão, inclui nas opções
+      ...(data.paymentToken && {
+        paymentToken: data.paymentToken,
+        installments: data.installments || 1,
+      }),
     };
 
     try {
@@ -117,30 +137,65 @@ export class PaymentGatewayService {
         );
       }
 
-      // Salva o pagamento no banco
-      const payment = await this.prisma.projectPayment.create({
-        data: {
-          projectId: data.projectId,
-          userId: data.userId ?? null,
-          userEmail: data.userEmail,
-          amount: data.amount,
-          commissionAmount: data.amount * 0.1, // 10% de comissão
-          paymentMethod: 'pix',
-          status: 'pending',
-          isSubscription: false,
-          anonymous: false,
-          transactionId: result.data.id,
-        },
-      });
+      // Salva o pagamento no banco - APENAS tokens/IDs, nunca dados sensíveis
+      if (data.projectId) {
+        const payment = await this.prisma.projectPayment.create({
+          data: {
+            projectId: data.projectId,
+            userId: data.userId ?? null,
+            userEmail: data.userEmail,
+            amount: data.amount,
+            commissionAmount: data.amount * 0.1, // 10% de comissão
+            paymentMethod: data.paymentMethod || 'pix',
+            status: 'pending',
+            isSubscription: false,
+            anonymous: false,
+            transactionId: result.data.id, // Apenas o ID da transação no gateway
+            gatewayProvider: 'abacate_pay',
+            paymentToken: data.paymentToken ?? null, // Token do cartão (se aplicável)
+            installments: data.installments ?? 1,
+          },
+        });
 
-      return {
-        success: true,
-        payment_id: payment.id,
-        billing_id: result.data.id,
-        payment_url: result.data.url,
-        amount: data.amount,
-        status: result.data.status,
-      };
+        return {
+          success: true,
+          payment_id: payment.id,
+          billing_id: result.data.id,
+          payment_url: result.data.url,
+          amount: data.amount,
+          status: result.data.status,
+        };
+      } else if (data.productId || data.serviceId) {
+        // Cria uma Order para produtos/serviços
+        const order = await this.prisma.order.create({
+          data: {
+            userId: data.userId ?? null,
+            userEmail: data.userEmail,
+            productId: data.productId ?? null,
+            serviceId: data.serviceId ?? null,
+            subtotal: data.amount,
+            shippingCost: 0,
+            total: data.amount,
+            deliveryMethod: 'pickup', // Será atualizado no checkout
+            paymentMethod: data.paymentMethod || 'pix',
+            transactionId: result.data.id,
+            gatewayProvider: 'abacate_pay',
+            paymentTokenId: data.paymentToken ? undefined : null, // Se tiver token, salva o ID
+            status: 'pending',
+          },
+        });
+
+        return {
+          success: true,
+          order_id: order.id,
+          billing_id: result.data.id,
+          payment_url: result.data.url,
+          amount: data.amount,
+          status: result.data.status,
+        };
+      }
+
+      throw new BadRequestException('projectId, productId ou serviceId deve ser fornecido');
     } catch (error) {
       console.error('Erro ao criar pagamento Abacate Pay:', error);
       if (error instanceof BadRequestException) {
@@ -150,6 +205,46 @@ export class PaymentGatewayService {
         'Erro ao processar pagamento. Tente novamente.',
       );
     }
+  }
+
+  /**
+   * Salva um token de cartão retornado pelo gateway
+   * IMPORTANTE: O token já deve ter sido criado pelo gateway, nunca recebemos dados do cartão aqui
+   */
+  async savePaymentToken(data: {
+    userId: string;
+    tokenId: string; // ID do token retornado pelo gateway
+    gatewayProvider: string;
+    last4Digits?: string;
+    cardBrand?: string;
+    expiryMonth?: number;
+    expiryYear?: number;
+  }) {
+    // Constrói o objeto de dados apenas com campos fornecidos
+    const tokenData: any = {
+      userId: data.userId,
+      tokenId: data.tokenId,
+      gatewayProvider: data.gatewayProvider,
+      isDefault: false, // Primeiro cartão vira padrão
+    };
+
+    // Adiciona campos opcionais apenas se fornecidos
+    if (data.last4Digits !== undefined) {
+      tokenData.last4Digits = data.last4Digits;
+    }
+    if (data.cardBrand !== undefined) {
+      tokenData.cardBrand = data.cardBrand;
+    }
+    if (data.expiryMonth !== undefined) {
+      tokenData.expiryMonth = data.expiryMonth;
+    }
+    if (data.expiryYear !== undefined) {
+      tokenData.expiryYear = data.expiryYear;
+    }
+
+    return this.prisma.paymentToken.create({
+      data: tokenData,
+    });
   }
 
   // Gera QR Code PIX diretamente
@@ -209,31 +304,45 @@ export class PaymentGatewayService {
       where: { transactionId: billingId },
     });
 
-    if (!payment) {
-      return { success: false, message: 'Pagamento não encontrado' };
+    if (payment) {
+      // Atualiza o status do pagamento
+      const newStatus = status === 'PAID' ? 'confirmed' : status.toLowerCase();
+
+      await this.prisma.projectPayment.update({
+        where: { id: payment.id },
+        data: { status: newStatus },
+      });
+
+      // Se confirmado, atualiza o valor arrecadado do projeto
+      if (status === 'PAID') {
+        await this.prisma.project.update({
+          where: { id: payment.projectId },
+          data: {
+            currentAmount: {
+              increment: payment.amount,
+            },
+          },
+        });
+      }
+
+      return { success: true, message: 'Webhook processado' };
     }
 
-    // Atualiza o status do pagamento
-    const newStatus = status === 'PAID' ? 'confirmed' : status.toLowerCase();
-
-    await this.prisma.projectPayment.update({
-      where: { id: payment.id },
-      data: { status: newStatus },
+    // Tenta buscar em Orders também
+    const order = await this.prisma.order.findFirst({
+      where: { transactionId: billingId },
     });
 
-    // Se confirmado, atualiza o valor arrecadado do projeto
-    if (status === 'PAID') {
-      await this.prisma.project.update({
-        where: { id: payment.projectId },
-        data: {
-          currentAmount: {
-            increment: payment.amount,
-          },
-        },
+    if (order) {
+      const newStatus = status === 'PAID' ? 'paid' : status.toLowerCase();
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: { status: newStatus },
       });
+      return { success: true, message: 'Webhook processado' };
     }
 
-    return { success: true, message: 'Webhook processado' };
+    return { success: false, message: 'Pagamento não encontrado' };
   }
 
   // Verifica status de um pagamento
@@ -243,18 +352,30 @@ export class PaymentGatewayService {
       include: { project: true },
     });
 
-    if (!payment) {
-      throw new BadRequestException('Pagamento não encontrado');
+    if (payment) {
+      return {
+        id: payment.id,
+        status: payment.status,
+        amount: payment.amount,
+        project_id: payment.projectId,
+        project_title: payment.project?.title,
+        created_at: payment.createdAt,
+      };
     }
 
-    return {
-      id: payment.id,
-      status: payment.status,
-      amount: payment.amount,
-      project_id: payment.projectId,
-      project_title: payment.project.title,
-      created_at: payment.createdAt,
-    };
+    const order = await this.prisma.order.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (order) {
+      return {
+        id: order.id,
+        status: order.status,
+        amount: order.total,
+        created_at: order.createdAt,
+      };
+    }
+
+    throw new BadRequestException('Pagamento não encontrado');
   }
 }
-

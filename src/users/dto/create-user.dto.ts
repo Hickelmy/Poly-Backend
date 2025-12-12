@@ -14,6 +14,35 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   role?: string;
+
+  // Campos de endereço (já vêm criptografados do frontend)
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  cep?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  neighborhood?: string;
+
+  @IsOptional()
+  @IsString()
+  street?: string;
+
+  @IsOptional()
+  @IsString()
+  houseNumber?: string;
 }
 
 
