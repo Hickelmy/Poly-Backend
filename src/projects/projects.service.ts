@@ -5,6 +5,31 @@ export interface ProjectFilter {
   [key: string]: any;
 }
 
+/**
+ * Calcula os votos mínimos necessários baseado no valor do projeto.
+ * Fórmula progressiva para evitar fraudes:
+ * - Até R$ 2.000: 10 votos (padrão)
+ * - De R$ 2.000 a R$ 10.000: 10 + ((valor - 2000) / 500) votos (1 voto a cada R$ 500)
+ * - De R$ 10.000 a R$ 50.000: 26 + ((valor - 10000) / 1000) votos (1 voto a cada R$ 1.000)
+ * - Acima de R$ 50.000: 66 + ((valor - 50000) / 2000) votos (1 voto a cada R$ 2.000)
+ */
+function calculateMinVotes(amount: number): number {
+  if (!amount || amount <= 0) return 10;
+  
+  if (amount <= 2000) {
+    return 10;
+  } else if (amount <= 10000) {
+    // De 2000 a 10000: 10 votos base + 1 voto a cada 500 reais
+    return Math.ceil(10 + (amount - 2000) / 500);
+  } else if (amount <= 50000) {
+    // De 10000 a 50000: 26 votos base + 1 voto a cada 1000 reais
+    return Math.ceil(26 + (amount - 10000) / 1000);
+  } else {
+    // Acima de 50000: 66 votos base + 1 voto a cada 2000 reais
+    return Math.ceil(66 + (amount - 50000) / 2000);
+  }
+}
+
 @Injectable()
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -187,6 +212,11 @@ export class ProjectsService {
       0,
     );
 
+    const finalTotal = target_amount ?? computedTotal;
+    
+    // Calcular votos mínimos automaticamente baseado no valor (ignora min_votes se fornecido)
+    const calculatedMinVotes = calculateMinVotes(finalTotal);
+
     const finalLat = latitude ?? lat;
     const finalLng = longitude ?? lng;
 
@@ -199,9 +229,9 @@ export class ProjectsService {
         status: rest.status ?? 'proposed',
         imageUrl: rest.image_url ?? null,
         evidences: evidences ?? [],
-        targetAmount: target_amount ?? 0,
+        targetAmount: finalTotal,
         currentAmount: current_amount ?? 0,
-        minVotes: min_votes ?? 10,
+        minVotes: calculatedMinVotes, // Usa cálculo automático (ignora min_votes do frontend)
         votesCount: votes_count ?? 0,
         fundingDeadline: funding_deadline ? new Date(funding_deadline) : null,
         ownerId: owner_id || user.userId,
@@ -233,7 +263,7 @@ export class ProjectsService {
       expenses,
       target_amount,
       current_amount,
-      min_votes,
+      min_votes, // Ignorado - sempre calculado automaticamente
       votes_count,
       funding_deadline,
       short_description,
@@ -255,9 +285,13 @@ export class ProjectsService {
     if (short_description !== undefined) {
       updateData.shortDescription = short_description;
     }
-    if (target_amount !== undefined) updateData.targetAmount = target_amount;
+    if (target_amount !== undefined) {
+      updateData.targetAmount = target_amount;
+      // Recalcular votos mínimos quando o valor muda
+      updateData.minVotes = calculateMinVotes(target_amount);
+    }
     if (current_amount !== undefined) updateData.currentAmount = current_amount;
-    if (min_votes !== undefined) updateData.minVotes = min_votes;
+    // min_votes é sempre calculado automaticamente, nunca atualizado manualmente
     if (votes_count !== undefined) updateData.votesCount = votes_count;
     if (funding_deadline !== undefined) {
       updateData.fundingDeadline = funding_deadline

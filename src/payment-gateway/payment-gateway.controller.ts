@@ -43,10 +43,49 @@ export class PaymentGatewayController {
     return this.paymentGatewayService.createPixQRCode(data.billing_id);
   }
 
+  // Cria um pagamento via Mercado Pago
+  @Post('create-mercadopago')
+  @UseGuards(JwtAuthGuard)
+  async createMercadoPagoPayment(
+    @Body()
+    data: {
+      amount: number;
+      product_id?: string;
+      service_id?: string;
+      product_title?: string;
+      service_title?: string;
+      quantity?: number;
+      delivery_method?: string;
+      delivery_address?: string;
+      return_url?: string;
+    },
+    @Request() req: any,
+  ) {
+    return this.paymentGatewayService.createMercadoPagoPayment({
+      amount: data.amount,
+      productId: data.product_id,
+      serviceId: data.service_id,
+      productTitle: data.product_title,
+      serviceTitle: data.service_title,
+      userId: req.user.userId,
+      userEmail: req.user.email,
+      quantity: data.quantity || 1,
+      deliveryMethod: data.delivery_method,
+      deliveryAddress: data.delivery_address,
+      returnUrl: data.return_url,
+    });
+  }
+
   // Webhook do Abacate Pay (sem autenticação JWT)
   @Post('webhook/abacate')
   async handleAbacateWebhook(@Body() data: any) {
     return this.paymentGatewayService.handleWebhook(data);
+  }
+
+  // Webhook do Mercado Pago (sem autenticação JWT)
+  @Post('webhook/mercadopago')
+  async handleMercadoPagoWebhook(@Body() data: any) {
+    return this.paymentGatewayService.handleMercadoPagoWebhook(data);
   }
 
   // Verifica status de um pagamento

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface ProjectVoteFilter {
@@ -56,6 +56,20 @@ export class ProjectVotesService {
   }
 
   async create(data: any) {
+    // Buscar o projeto para verificar o owner
+    const project = await this.prisma.project.findUnique({
+      where: { id: data.project_id },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Projeto não encontrado.');
+    }
+
+    // Impedir que o criador do projeto vote no próprio projeto
+    if (project.ownerEmail === data.user_email || project.ownerId === data.user_id) {
+      throw new BadRequestException('Você não pode votar no seu próprio projeto.');
+    }
+
     // Garante 1 voto por usuário por projeto
     const already = await this.prisma.projectVote.findFirst({
       where: {
@@ -78,31 +92,32 @@ export class ProjectVotesService {
     });
 
     // Após criar o voto, recalcula os totais e atualiza status do projeto, se necessário
-    const project = await this.prisma.project.findUnique({
+    // Rebuscar o projeto com os votos para recalcular
+    const projectWithVotes = await this.prisma.project.findUnique({
       where: { id: data.project_id },
       include: { votes: true },
     });
 
-    if (project) {
+    if (projectWithVotes) {
       const upVotes =
-        project.votes?.filter((v) => v.type === 'up').length ?? 0;
+        projectWithVotes.votes?.filter((v) => v.type === 'up').length ?? 0;
       const downVotes =
-        project.votes?.filter((v) => v.type === 'down').length ?? 0;
+        projectWithVotes.votes?.filter((v) => v.type === 'down').length ?? 0;
       const diff = upVotes - downVotes;
-      const minVotes = project.minVotes ?? 0;
+      const minVotes = projectWithVotes.minVotes ?? 0;
 
       if (
-        (project.status === 'proposed' || project.status === 'voting') &&
+        (projectWithVotes.status === 'proposed' || projectWithVotes.status === 'voting') &&
         diff >= minVotes
       ) {
         await this.prisma.project.update({
-          where: { id: project.id },
+          where: { id: projectWithVotes.id },
           data: { status: 'funding' },
         });
-      } else if (project.status === 'proposed') {
+      } else if (projectWithVotes.status === 'proposed') {
         // se já começou a receber votos, garante que fique em "voting"
         await this.prisma.project.update({
-          where: { id: project.id },
+          where: { id: projectWithVotes.id },
           data: { status: 'voting' },
         });
       }

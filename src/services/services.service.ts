@@ -55,11 +55,15 @@ export class ServicesService {
       ...s,
       created_date: s.createdAt,
       price_type: s.priceType,
+      price_per_hour: s.pricePerHour,
+      price_per_day: s.pricePerDay,
+      price_per_service: s.pricePerService,
       service_type: s.serviceType,
       reviews_count: s.reviewsCount,
       provider_name: s.providerName,
       provider_email: s.providerEmail,
       zone_id: s.zoneId,
+      availability_schedule: s.availabilitySchedule,
     }));
   }
 
@@ -68,8 +72,11 @@ export class ServicesService {
       data: {
         title: data.title,
         description: data.description,
-        price: data.price,
-        priceType: data.price_type ?? data.priceType ?? 'servico',
+        price: data.price ?? null,
+        priceType: data.price_type ?? data.priceType ?? 'servico', // Valor padrão para compatibilidade
+        pricePerHour: data.price_per_hour ?? data.pricePerHour ?? null,
+        pricePerDay: data.price_per_day ?? data.pricePerDay ?? null,
+        pricePerService: data.price_per_service ?? data.pricePerService ?? null,
         serviceType: data.service_type ?? data.serviceType,
         images: data.images ?? [],
         active: data.active ?? true,
@@ -79,17 +86,22 @@ export class ServicesService {
         zoneId: data.zone_id ?? data.zoneId ?? null,
         lat: data.lat ?? null,
         lng: data.lng ?? null,
+        availabilitySchedule: data.availability_schedule ?? data.availabilitySchedule ?? null,
       },
     });
     return {
       ...created,
       created_date: created.createdAt,
       price_type: created.priceType,
+      price_per_hour: created.pricePerHour,
+      price_per_day: created.pricePerDay,
+      price_per_service: created.pricePerService,
       service_type: created.serviceType,
       reviews_count: created.reviewsCount,
       provider_name: created.providerName,
       provider_email: created.providerEmail,
       zone_id: created.zoneId,
+      availability_schedule: created.availabilitySchedule,
     };
   }
 
@@ -104,14 +116,18 @@ export class ServicesService {
       data: {
         title: data.title ?? existing.title,
         description: data.description ?? existing.description,
-        price: data.price ?? existing.price,
-        priceType: data.price_type ?? data.priceType ?? existing.priceType,
+        price: data.price !== undefined ? data.price : existing.price,
+        priceType: data.price_type ?? data.priceType ?? existing.priceType ?? 'servico', // Valor padrão para compatibilidade
+        pricePerHour: data.price_per_hour !== undefined ? data.price_per_hour : data.pricePerHour ?? existing.pricePerHour,
+        pricePerDay: data.price_per_day !== undefined ? data.price_per_day : data.pricePerDay ?? existing.pricePerDay,
+        pricePerService: data.price_per_service !== undefined ? data.price_per_service : data.pricePerService ?? existing.pricePerService,
         serviceType: data.service_type ?? data.serviceType ?? existing.serviceType,
         images: data.images ?? existing.images,
         active: data.active ?? existing.active,
         zoneId: data.zone_id ?? data.zoneId ?? existing.zoneId,
         lat: data.lat ?? existing.lat,
         lng: data.lng ?? existing.lng,
+        availabilitySchedule: data.availability_schedule ?? data.availabilitySchedule ?? existing.availabilitySchedule,
       },
     });
 
@@ -119,11 +135,15 @@ export class ServicesService {
       ...updated,
       created_date: updated.createdAt,
       price_type: updated.priceType,
+      price_per_hour: updated.pricePerHour,
+      price_per_day: updated.pricePerDay,
+      price_per_service: updated.pricePerService,
       service_type: updated.serviceType,
       reviews_count: updated.reviewsCount,
       provider_name: updated.providerName,
       provider_email: updated.providerEmail,
       zone_id: updated.zoneId,
+      availability_schedule: updated.availabilitySchedule,
     };
   }
 

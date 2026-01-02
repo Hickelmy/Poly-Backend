@@ -15,4 +15,11 @@ CORS_ORIGIN=*
 # URL do frontend (para redirects e callbacks)
 FRONTEND_URL="http://localhost:5173"
 
+# URL do backend (para webhooks e callbacks)
+BACKEND_URL="http://localhost:3001"
+
+# Mercado Pago - Configuração
+# true para produção, false ou não definido para sandbox/test
+MERCADO_PAGO_PRODUCTION=false
+
 

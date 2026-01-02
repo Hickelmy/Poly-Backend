@@ -203,6 +203,7 @@ model Order {
   // Produto/Serviço
   productId       String?  // Se for compra de produto
   serviceId       String?  // Se for contratação de serviço
+  quantity        Int      @default(1)  // Quantidade comprada
   
   // Valores
   subtotal        Float
@@ -280,8 +281,11 @@ model Service {
   id            String   @id @default(cuid())
   title         String
   description   String?
-  price         Float?
-  priceType     String   // hora, diaria, servico, orcamento
+  price         Float?   // Mantido para compatibilidade (será removido no futuro)
+  priceType     String?  // Mantido para compatibilidade (será removido no futuro)
+  pricePerHour  Float?   // Preço por hora (opcional)
+  pricePerDay   Float?   // Preço por dia (opcional)
+  pricePerService Float? // Preço por serviço completo (opcional)
   serviceType   String?  // limpeza, manutencao, etc.
   images        String[]
   active        Boolean  @default(true)
@@ -298,6 +302,12 @@ model Service {
 
   rating        Float?   @default(0)
   reviewsCount  Int?     @default(0)
+
+  // Disponibilidade - JSON com estrutura: { "monday": { "available": true, "timeSlots": ["08:00-12:00", "14:00-18:00"] }, ... }
+  availabilitySchedule Json?
+  
+  // Relações
+  bookings ServiceBooking[]
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -375,4 +385,57 @@ model NewsReport {
   createdAt   DateTime @default(now())
 }
 
+model ServiceBooking {
+  id              String   @id @default(cuid())
+  
+  // Relacionamentos
+  serviceId       String?
+  service         Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  
+  // Cliente
+  clientId        String?
+  clientEmail     String?
+  
+  // Prestador
+  providerId      String?
+  providerEmail   String?
+  
+  // Informações do agendamento
+  serviceTitle    String?
+  scheduledAt      DateTime
+  durationHours   Float    @default(1)
+  notes           String?
+  clientPriceType String?  // Tipo de cobrança escolhido pelo cliente: hora, diaria, servico
+  
+  // Valores
+  totalAmount     Float  // Valor estimado inicial
+  finalAmount     Float? // Valor final calculado baseado no tempo real trabalhado
+  commissionAmount Float   @default(0)
+  
+  // Tempo real trabalhado
+  actualWorkedHours   Int?    // Horas trabalhadas
+  actualWorkedMinutes Int?    // Minutos trabalhados (0-59)
+  
+  // Status
+  status          String   @default("requested") // requested, accepted, cancelled, in_progress, completed
+  paymentStatus   String   @default("pending") // pending, paid, refunded
+  
+  // Código de confirmação único
+  serviceCode     String?  // Código único do serviço (gerado ao aceitar, o cliente recebe este código)
+  codeVerified    Boolean  @default(false) // Se o código foi verificado e serviço iniciado
+  
+  // Localização e hora de início (para auditoria)
+  startedAt       DateTime? // Hora em que o serviço foi iniciado (quando o código foi verificado)
+  clientLat       Float?    // Latitude do cliente quando o serviço iniciou
+  clientLng       Float?    // Longitude do cliente quando o serviço iniciou
+  providerLat     Float?    // Latitude do prestador quando o serviço iniciou
+  providerLng     Float?    // Longitude do prestador quando o serviço iniciou
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([providerEmail])
+  @@index([clientEmail])
+  @@index([status])
+}
 

@@ -17,6 +17,7 @@ import { ApiTokensModule } from './api-tokens/api-tokens.module';
 import { PaymentGatewayModule } from './payment-gateway/payment-gateway.module';
 import { ZonesModule } from './zones/zones.module';
 import { NewsModule } from './news/news.module';
+import { ServiceBookingsModule } from './service-bookings/service-bookings.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { NewsModule } from './news/news.module';
     PaymentGatewayModule,
     ZonesModule,
     NewsModule,
+    ServiceBookingsModule,
   ],
   controllers: [AppController],
   providers: [
