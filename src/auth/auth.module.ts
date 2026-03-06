@@ -6,19 +6,21 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './jwt.strategy';
+import { FirebaseModule } from '../firebase/firebase.module';
 
 @Module({
   imports: [
     ConfigModule,
     UsersModule,
     PassportModule,
+    FirebaseModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN') || '30d',
+          expiresIn: configService.get<string>('JWT_ACCESS_TOKEN_TTL', '15m'),
         },
       }),
     }),
@@ -27,5 +29,3 @@ import { JwtStrategy } from './jwt.strategy';
   providers: [AuthService, JwtStrategy],
 })
 export class AuthModule {}
-
-
