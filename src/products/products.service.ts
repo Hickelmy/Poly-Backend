@@ -1,37 +1,100 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ZonesService } from '../zones/zones.service';
+import { ModerationService } from '../moderation/moderation.service';
 
 export interface ProductFilter {
   [key: string]: any;
 }
 
+// Calcula distância em km usando fórmula de Haversine
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // Raio da Terra em km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly zonesService: ZonesService,
+    private readonly moderationService: ModerationService,
+  ) {}
 
   private buildWhere(filters: ProductFilter) {
     const where: ProductFilter = {};
+    
+    // Mapeamento de campos snake_case para camelCase
+    const fieldMapping: Record<string, string> = {
+      'seller_id': 'sellerId',
+      'seller_email': 'sellerEmail',
+      'seller_name': 'sellerName',
+      'zone_id': 'zoneId',
+      'quantity_available': 'quantityAvailable',
+      'unit_type': 'unitType',
+      'created_date': 'createdAt',
+      'updated_date': 'updatedAt',
+    };
+    
     Object.entries(filters).forEach(([key, value]) => {
       if (value === undefined || value === null || value === '') return;
+      
+      // Converte snake_case para camelCase
+      const prismaKey = fieldMapping[key] || key;
+      
       let parsed: any = value;
       if (value === 'true' || value === true) parsed = true;
       else if (value === 'false' || value === false) parsed = false;
-      else if (!isNaN(Number(value)) && key !== 'sellerEmail' && key !== 'seller_email' && key !== 'zone_id' && key !== 'zoneId') {
+      else if (!isNaN(Number(value)) && key !== 'sellerEmail' && key !== 'seller_email' && key !== 'zone_id' && key !== 'zoneId' && key !== 'seller_id') {
         parsed = Number(value);
       }
-      let prismaKey = key;
-      if (key === 'seller_email') prismaKey = 'sellerEmail';
-      if (key === 'zone_id') prismaKey = 'zoneId';
+      
       where[prismaKey] = parsed;
     });
     return where;
   }
 
-  async findMany(params: { sort?: string; limit?: number; filters?: ProductFilter }) {
-    const { sort, limit, filters = {} } = params;
+  async findMany(params: { 
+    sort?: string; 
+    limit?: number; 
+    filters?: ProductFilter;
+    userLat?: number;
+    userLng?: number;
+    userId?: string;
+    userRole?: string;
+  }) {
+    const { sort, limit, filters = {}, userLat, userLng, userId, userRole } = params;
+    const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+
+    // Remove userLat e userLng dos filtros (não são campos do banco)
+    const { userLat: _uLat, userLng: _uLng, user_lat: _uLat2, user_lng: _uLng2, ...cleanFilters } = filters;
+
+    // Zonas exclusivas: gestores veem tudo; outros só globais + zonas vinculadas ao perfil
+    const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(userId, { isAdmin });
+    const requestedZoneId = cleanFilters.zone_id ?? cleanFilters.zoneId;
+    if (
+      accessibleZoneIds !== null &&
+      requestedZoneId &&
+      !accessibleZoneIds.includes(requestedZoneId) &&
+      requestedZoneId !== 'null'
+    ) {
+      delete cleanFilters.zone_id;
+      delete cleanFilters.zoneId;
+    }
 
     let orderBy: any = { createdAt: 'desc' };
-    if (sort) {
+    const sortByProximity = sort === 'proximity' || sort === 'distance';
+    
+    if (sort && !sortByProximity) {
       const desc = sort.startsWith('-');
       const field = desc ? sort.slice(1) : sort;
       let prismaField = field;
@@ -42,27 +105,88 @@ export class ProductsService {
       orderBy = { [prismaField]: desc ? 'desc' : 'asc' };
     }
 
-    const where = this.buildWhere(filters);
+    const where = this.buildWhere(cleanFilters);
+
+    // Filtro por zonas: gestores veem tudo; outros só globais + zonas vinculadas ao perfil
+    if (accessibleZoneIds !== null) {
+      if (accessibleZoneIds.length === 0) {
+        where.zoneId = null;
+      } else if (!where.zoneId) {
+        where.OR = [
+          { zoneId: null },
+          { zoneId: { in: accessibleZoneIds } },
+        ];
+      }
+    }
 
     const items = await this.prisma.product.findMany({
       where,
-      orderBy,
-      take: limit && Number.isFinite(limit) ? limit : undefined,
+      orderBy: sortByProximity ? undefined : orderBy,
+      take: !sortByProximity && limit && Number.isFinite(limit) ? limit : undefined,
     });
 
-    // Adapter para o frontend, adicionando campos em snake_case
-    return items.map((p) => ({
-      ...p,
-      created_date: p.createdAt,
-      quantity_available: p.quantityAvailable,
-      unit_type: p.unitType,
-      seller_name: p.sellerName,
-      seller_email: p.sellerEmail,
-      zone_id: p.zoneId,
-    }));
+    if (sortByProximity && userLat != null && userLng != null) {
+      const itemsWithDistance = items.map((item) => {
+        let dist = Infinity;
+        if (item.lat != null && item.lng != null) {
+          dist = haversineDistance(userLat, userLng, item.lat, item.lng);
+        }
+        return { ...item, _distance: dist };
+      });
+
+      itemsWithDistance.sort((a, b) => {
+        if (a._distance === b._distance) {
+          return (a.title || '').localeCompare(b.title || '');
+        }
+        return a._distance - b._distance;
+      });
+
+      const sliced = limit && Number.isFinite(limit)
+        ? itemsWithDistance.slice(0, limit)
+        : itemsWithDistance;
+
+      return sliced.map(({ _distance, ...rest }) => ({
+        ...rest,
+        distance: _distance === Infinity ? null : Math.round(_distance * 10) / 10,
+      }));
+    }
+
+    return items;
+  }
+
+  async findOne(id: string, userId?: string, userRole?: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Produto não encontrado');
+    }
+
+    // Zona exclusiva: gestores veem tudo; outros só se for global ou zona vinculada ao perfil
+    if (product.zoneId) {
+      const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+      const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(userId, { isAdmin });
+      if (accessibleZoneIds !== null && !accessibleZoneIds.includes(product.zoneId)) {
+        throw new NotFoundException('Produto não encontrado');
+      }
+    }
+
+    return product;
   }
 
   async create(data: any, user: { userId: string; email: string }) {
+    const imageUrls = (data.images || []).filter((u: string) => u && (u.startsWith('http') || u.startsWith('data:')));
+    const mod = await this.moderationService.moderateTextAndImages(
+      [data.title, data.description].filter(Boolean).join('\n\n'),
+      imageUrls,
+    );
+    if (mod.flagged) {
+      throw new BadRequestException(
+        'Conteúdo não permitido. Revise o texto e as imagens antes de publicar.',
+      );
+    }
+
     const created = await this.prisma.product.create({
       data: {
         title: data.title,
@@ -82,15 +206,8 @@ export class ProductsService {
         lng: data.lng ?? null,
       },
     });
-    return {
-      ...created,
-      created_date: created.createdAt,
-      quantity_available: created.quantityAvailable,
-      unit_type: created.unitType,
-      seller_name: created.sellerName,
-      seller_email: created.sellerEmail,
-      zone_id: created.zoneId,
-    };
+    // Retorna apenas os campos do Prisma (camelCase)
+    return created;
   }
 
   async update(id: string, data: any) {
@@ -99,34 +216,37 @@ export class ProductsService {
       throw new NotFoundException('Produto não encontrado');
     }
 
+    // Atualiza apenas campos enviados (PATCH parcial)
+    const updateData: any = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.price !== undefined) updateData.price = data.price;
+    if (data.quantity_available !== undefined || data.quantityAvailable !== undefined) {
+      updateData.quantityAvailable = data.quantity_available ?? data.quantityAvailable;
+    }
+    if (data.category !== undefined) updateData.category = data.category;
+    if (data.condition !== undefined) updateData.condition = data.condition;
+    if (data.unit_type !== undefined || data.unitType !== undefined) {
+      updateData.unitType = data.unit_type ?? data.unitType;
+    }
+    if (data.images !== undefined) updateData.images = data.images;
+    if (data.active !== undefined) updateData.active = data.active;
+    if (data.zone_id !== undefined || data.zoneId !== undefined) {
+      updateData.zoneId = data.zone_id ?? data.zoneId;
+    }
+    if (data.lat !== undefined) updateData.lat = data.lat;
+    if (data.lng !== undefined) updateData.lng = data.lng;
+
+    if (Object.keys(updateData).length === 0) {
+      return existing;
+    }
+
     const updated = await this.prisma.product.update({
       where: { id },
-      data: {
-        title: data.title ?? existing.title,
-        description: data.description ?? existing.description,
-        price: data.price ?? existing.price,
-        quantityAvailable:
-          data.quantity_available ?? data.quantityAvailable ?? existing.quantityAvailable,
-        category: data.category ?? existing.category,
-        condition: data.condition ?? existing.condition,
-        unitType: data.unit_type ?? data.unitType ?? existing.unitType,
-        images: data.images ?? existing.images,
-        active: data.active ?? existing.active,
-        zoneId: data.zone_id ?? data.zoneId ?? existing.zoneId,
-        lat: data.lat ?? existing.lat,
-        lng: data.lng ?? existing.lng,
-      },
+      data: updateData,
     });
 
-    return {
-      ...updated,
-      created_date: updated.createdAt,
-      quantity_available: updated.quantityAvailable,
-      unit_type: updated.unitType,
-      seller_name: updated.sellerName,
-      seller_email: updated.sellerEmail,
-      zone_id: updated.zoneId,
-    };
+    return updated;
   }
 
   async delete(id: string) {

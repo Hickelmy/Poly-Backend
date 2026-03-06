@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ZonesService } from '../zones/zones.service';
+import { ModerationService } from '../moderation/moderation.service';
 
 export interface ProjectFilter {
   [key: string]: any;
@@ -32,7 +34,11 @@ function calculateMinVotes(amount: number): number {
 
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly zonesService: ZonesService,
+    private readonly moderationService: ModerationService,
+  ) {}
 
   private buildWhere(filters: ProjectFilter) {
     const where: any = {};
@@ -61,8 +67,23 @@ export class ProjectsService {
     return where;
   }
 
-  async findMany(params: { sort?: string; limit?: number; filters?: ProjectFilter }) {
-    const { sort, limit, filters = {} } = params;
+  async findMany(params: { sort?: string; limit?: number; filters?: ProjectFilter; userId?: string; userRole?: string }) {
+    const { sort, limit, filters = {}, userId, userRole } = params;
+    const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+
+    // Zonas exclusivas: gestores veem tudo; outros só globais + zonas vinculadas ao perfil
+    const cleanFilters = { ...filters };
+    const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(userId, { isAdmin });
+    const requestedZoneId = cleanFilters.zone_id ?? cleanFilters.zoneId;
+    if (
+      accessibleZoneIds !== null &&
+      requestedZoneId &&
+      !accessibleZoneIds.includes(requestedZoneId) &&
+      requestedZoneId !== 'null'
+    ) {
+      delete cleanFilters.zone_id;
+      delete cleanFilters.zoneId;
+    }
 
     let orderBy: any = { createdAt: 'desc' };
     if (sort) {
@@ -78,7 +99,19 @@ export class ProjectsService {
       orderBy = { [prismaField]: desc ? 'desc' : 'asc' };
     }
 
-    const where = this.buildWhere(filters);
+    const where = this.buildWhere(cleanFilters);
+
+    // Filtro por zonas: gestores veem tudo; outros só globais + zonas vinculadas ao perfil
+    if (accessibleZoneIds !== null) {
+      if (accessibleZoneIds.length === 0) {
+        where.zoneId = null;
+      } else if (!where.zoneId) {
+        where.OR = [
+          { zoneId: null },
+          { zoneId: { in: accessibleZoneIds } },
+        ];
+      }
+    }
 
     const items = await this.prisma.project.findMany({
       where,
@@ -127,7 +160,7 @@ export class ProjectsService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string, userRole?: string) {
     const project = await this.prisma.project.findUnique({
       where: { id },
       include: {
@@ -138,6 +171,15 @@ export class ProjectsService {
 
     if (!project) {
       throw new NotFoundException('Projeto não encontrado');
+    }
+
+    // Zona exclusiva: gestores veem tudo; outros só se for global ou zona vinculada ao perfil
+    if (project.zoneId) {
+      const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+      const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(userId, { isAdmin });
+      if (accessibleZoneIds !== null && !accessibleZoneIds.includes(project.zoneId)) {
+        throw new NotFoundException('Projeto não encontrado');
+      }
     }
 
     const upVotes =
@@ -219,6 +261,20 @@ export class ProjectsService {
 
     const finalLat = latitude ?? lat;
     const finalLng = longitude ?? lng;
+
+    const imageUrls = [
+      rest.image_url,
+      ...(evidences || []),
+    ].filter((u: string) => u && (u.startsWith('http') || u.startsWith('data:')));
+    const mod = await this.moderationService.moderateTextAndImages(
+      [rest.title, rest.description, short_description].filter(Boolean).join('\n\n'),
+      imageUrls,
+    );
+    if (mod.flagged) {
+      throw new BadRequestException(
+        'Conteúdo não permitido. Revise o texto e as imagens antes de publicar.',
+      );
+    }
 
     const created = await this.prisma.project.create({
       data: {

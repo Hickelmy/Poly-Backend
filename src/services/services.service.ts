@@ -1,37 +1,104 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ZonesService } from '../zones/zones.service';
+import { ModerationService } from '../moderation/moderation.service';
 
 export interface ServiceFilter {
   [key: string]: any;
 }
 
+// Calcula distância em km usando fórmula de Haversine
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // Raio da Terra em km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 @Injectable()
 export class ServicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly zonesService: ZonesService,
+    private readonly moderationService: ModerationService,
+  ) {}
 
   private buildWhere(filters: ServiceFilter) {
     const where: ServiceFilter = {};
+    
+    // Mapeamento de campos snake_case para camelCase
+    const fieldMapping: Record<string, string> = {
+      'provider_id': 'providerId',
+      'provider_email': 'providerEmail',
+      'provider_name': 'providerName',
+      'zone_id': 'zoneId',
+      'price_type': 'priceType',
+      'price_per_hour': 'pricePerHour',
+      'price_per_day': 'pricePerDay',
+      'price_per_service': 'pricePerService',
+      'service_type': 'serviceType',
+      'reviews_count': 'reviewsCount',
+      'created_date': 'createdAt',
+      'updated_date': 'updatedAt',
+    };
+    
     Object.entries(filters).forEach(([key, value]) => {
       if (value === undefined || value === null || value === '') return;
+      
+      // Converte snake_case para camelCase
+      const prismaKey = fieldMapping[key] || key;
+      
       let parsed: any = value;
       if (value === 'true' || value === true) parsed = true;
       else if (value === 'false' || value === false) parsed = false;
-      else if (!isNaN(Number(value)) && key !== 'providerEmail' && key !== 'provider_email' && key !== 'zone_id' && key !== 'zoneId') {
+      else if (!isNaN(Number(value)) && key !== 'providerEmail' && key !== 'provider_email' && key !== 'zone_id' && key !== 'zoneId' && key !== 'provider_id') {
         parsed = Number(value);
       }
-      let prismaKey = key;
-      if (key === 'provider_email') prismaKey = 'providerEmail';
-      if (key === 'zone_id') prismaKey = 'zoneId';
+      
       where[prismaKey] = parsed;
     });
     return where;
   }
 
-  async findMany(params: { sort?: string; limit?: number; filters?: ServiceFilter }) {
-    const { sort, limit, filters = {} } = params;
+  async findMany(params: { 
+    sort?: string; 
+    limit?: number; 
+    filters?: ServiceFilter;
+    userLat?: number;
+    userLng?: number;
+    userId?: string;
+    userRole?: string;
+  }) {
+    const { sort, limit, filters = {}, userLat, userLng, userId, userRole } = params;
+    const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+
+    // Remove userLat e userLng dos filtros (não são campos do banco)
+    const { userLat: _uLat, userLng: _uLng, user_lat: _uLat2, user_lng: _uLng2, ...cleanFilters } = filters;
+
+    // Zonas exclusivas: gestores veem tudo; outros só globais + zonas vinculadas ao perfil
+    const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(userId, { isAdmin });
+    const requestedZoneId = cleanFilters.zone_id ?? cleanFilters.zoneId;
+    if (
+      accessibleZoneIds !== null &&
+      requestedZoneId &&
+      !accessibleZoneIds.includes(requestedZoneId) &&
+      requestedZoneId !== 'null'
+    ) {
+      delete cleanFilters.zone_id;
+      delete cleanFilters.zoneId;
+    }
 
     let orderBy: any = { createdAt: 'desc' };
-    if (sort) {
+    const sortByProximity = sort === 'proximity' || sort === 'distance';
+    
+    if (sort && !sortByProximity) {
       const desc = sort.startsWith('-');
       const field = desc ? sort.slice(1) : sort;
       let prismaField = field;
@@ -42,32 +109,88 @@ export class ServicesService {
       orderBy = { [prismaField]: desc ? 'desc' : 'asc' };
     }
 
-    const where = this.buildWhere(filters);
+    const where = this.buildWhere(cleanFilters);
+
+    // Filtro por zonas: gestores veem tudo; outros só globais + zonas vinculadas ao perfil
+    if (accessibleZoneIds !== null) {
+      if (accessibleZoneIds.length === 0) {
+        where.zoneId = null;
+      } else if (!where.zoneId) {
+        where.OR = [
+          { zoneId: null },
+          { zoneId: { in: accessibleZoneIds } },
+        ];
+      }
+    }
 
     const items = await this.prisma.service.findMany({
       where,
-      orderBy,
-      take: limit && Number.isFinite(limit) ? limit : undefined,
+      orderBy: sortByProximity ? undefined : orderBy,
+      take: !sortByProximity && limit && Number.isFinite(limit) ? limit : undefined,
     });
 
-    // Adapter para o frontend, adicionando campos em snake_case
-    return items.map((s) => ({
-      ...s,
-      created_date: s.createdAt,
-      price_type: s.priceType,
-      price_per_hour: s.pricePerHour,
-      price_per_day: s.pricePerDay,
-      price_per_service: s.pricePerService,
-      service_type: s.serviceType,
-      reviews_count: s.reviewsCount,
-      provider_name: s.providerName,
-      provider_email: s.providerEmail,
-      zone_id: s.zoneId,
-      availability_schedule: s.availabilitySchedule,
-    }));
+    if (sortByProximity && userLat != null && userLng != null) {
+      const itemsWithDistance = items.map((item) => {
+        let dist = Infinity;
+        if (item.lat != null && item.lng != null) {
+          dist = haversineDistance(userLat, userLng, item.lat, item.lng);
+        }
+        return { ...item, _distance: dist };
+      });
+
+      itemsWithDistance.sort((a, b) => {
+        if (a._distance === b._distance) {
+          return (a.title || '').localeCompare(b.title || '');
+        }
+        return a._distance - b._distance;
+      });
+
+      const sliced = limit && Number.isFinite(limit)
+        ? itemsWithDistance.slice(0, limit)
+        : itemsWithDistance;
+
+      return sliced.map(({ _distance, ...rest }) => ({
+        ...rest,
+        distance: _distance === Infinity ? null : Math.round(_distance * 10) / 10,
+      }));
+    }
+
+    return items;
+  }
+
+  async findOne(id: string, userId?: string, userRole?: string) {
+    const service = await this.prisma.service.findUnique({
+      where: { id },
+    });
+
+    if (!service) {
+      throw new NotFoundException('Serviço não encontrado');
+    }
+
+    // Zona exclusiva: gestores veem tudo; outros só se for global ou zona vinculada ao perfil
+    if (service.zoneId) {
+      const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+      const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(userId, { isAdmin });
+      if (accessibleZoneIds !== null && !accessibleZoneIds.includes(service.zoneId)) {
+        throw new NotFoundException('Serviço não encontrado');
+      }
+    }
+
+    return service;
   }
 
   async create(data: any, user: { userId: string; email: string }) {
+    const imageUrls = (data.images || []).filter((u: string) => u && (u.startsWith('http') || u.startsWith('data:')));
+    const mod = await this.moderationService.moderateTextAndImages(
+      [data.title, data.description].filter(Boolean).join('\n\n'),
+      imageUrls,
+    );
+    if (mod.flagged) {
+      throw new BadRequestException(
+        'Conteúdo não permitido. Revise o texto e as imagens antes de publicar.',
+      );
+    }
+
     const created = await this.prisma.service.create({
       data: {
         title: data.title,
@@ -89,20 +212,8 @@ export class ServicesService {
         availabilitySchedule: data.availability_schedule ?? data.availabilitySchedule ?? null,
       },
     });
-    return {
-      ...created,
-      created_date: created.createdAt,
-      price_type: created.priceType,
-      price_per_hour: created.pricePerHour,
-      price_per_day: created.pricePerDay,
-      price_per_service: created.pricePerService,
-      service_type: created.serviceType,
-      reviews_count: created.reviewsCount,
-      provider_name: created.providerName,
-      provider_email: created.providerEmail,
-      zone_id: created.zoneId,
-      availability_schedule: created.availabilitySchedule,
-    };
+    // Retorna apenas os campos do Prisma (camelCase)
+    return created;
   }
 
   async update(id: string, data: any) {
@@ -111,40 +222,47 @@ export class ServicesService {
       throw new NotFoundException('Serviço não encontrado');
     }
 
+    // Atualiza apenas campos enviados (PATCH parcial)
+    const updateData: any = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.price !== undefined) updateData.price = data.price;
+    if (data.price_type !== undefined || data.priceType !== undefined) {
+      updateData.priceType = data.price_type ?? data.priceType;
+    }
+    if (data.price_per_hour !== undefined || data.pricePerHour !== undefined) {
+      updateData.pricePerHour = data.price_per_hour ?? data.pricePerHour;
+    }
+    if (data.price_per_day !== undefined || data.pricePerDay !== undefined) {
+      updateData.pricePerDay = data.price_per_day ?? data.pricePerDay;
+    }
+    if (data.price_per_service !== undefined || data.pricePerService !== undefined) {
+      updateData.pricePerService = data.price_per_service ?? data.pricePerService;
+    }
+    if (data.service_type !== undefined || data.serviceType !== undefined) {
+      updateData.serviceType = data.service_type ?? data.serviceType;
+    }
+    if (data.images !== undefined) updateData.images = data.images;
+    if (data.active !== undefined) updateData.active = data.active;
+    if (data.zone_id !== undefined || data.zoneId !== undefined) {
+      updateData.zoneId = data.zone_id ?? data.zoneId;
+    }
+    if (data.lat !== undefined) updateData.lat = data.lat;
+    if (data.lng !== undefined) updateData.lng = data.lng;
+    if (data.availability_schedule !== undefined || data.availabilitySchedule !== undefined) {
+      updateData.availabilitySchedule = data.availability_schedule ?? data.availabilitySchedule;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return existing;
+    }
+
     const updated = await this.prisma.service.update({
       where: { id },
-      data: {
-        title: data.title ?? existing.title,
-        description: data.description ?? existing.description,
-        price: data.price !== undefined ? data.price : existing.price,
-        priceType: data.price_type ?? data.priceType ?? existing.priceType ?? 'servico', // Valor padrão para compatibilidade
-        pricePerHour: data.price_per_hour !== undefined ? data.price_per_hour : data.pricePerHour ?? existing.pricePerHour,
-        pricePerDay: data.price_per_day !== undefined ? data.price_per_day : data.pricePerDay ?? existing.pricePerDay,
-        pricePerService: data.price_per_service !== undefined ? data.price_per_service : data.pricePerService ?? existing.pricePerService,
-        serviceType: data.service_type ?? data.serviceType ?? existing.serviceType,
-        images: data.images ?? existing.images,
-        active: data.active ?? existing.active,
-        zoneId: data.zone_id ?? data.zoneId ?? existing.zoneId,
-        lat: data.lat ?? existing.lat,
-        lng: data.lng ?? existing.lng,
-        availabilitySchedule: data.availability_schedule ?? data.availabilitySchedule ?? existing.availabilitySchedule,
-      },
+      data: updateData,
     });
 
-    return {
-      ...updated,
-      created_date: updated.createdAt,
-      price_type: updated.priceType,
-      price_per_hour: updated.pricePerHour,
-      price_per_day: updated.pricePerDay,
-      price_per_service: updated.pricePerService,
-      service_type: updated.serviceType,
-      reviews_count: updated.reviewsCount,
-      provider_name: updated.providerName,
-      provider_email: updated.providerEmail,
-      zone_id: updated.zoneId,
-      availability_schedule: updated.availabilitySchedule,
-    };
+    return updated;
   }
 
   async delete(id: string) {

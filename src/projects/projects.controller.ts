@@ -13,6 +13,7 @@ import {
 import { Request } from 'express';
 import { ProjectsService } from './projects.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 interface RequestWithUser extends Request {
   user?: {
@@ -27,7 +28,9 @@ export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   findAll(
+    @Req() req: RequestWithUser,
     @Query('sort') sort?: string,
     @Query('limit') limit?: string,
     @Query() query?: any,
@@ -37,12 +40,15 @@ export class ProjectsController {
       sort,
       limit: limit ? parseInt(limit, 10) : undefined,
       filters,
+      userId: req.user?.userId,
+      userRole: req.user?.role,
     });
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.projectsService.findOne(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  findOne(@Param('id') id: string, @Req() req: RequestWithUser) {
+    return this.projectsService.findOne(id, req.user?.userId, req.user?.role);
   }
 
   @UseGuards(JwtAuthGuard)
