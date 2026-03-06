@@ -20,7 +20,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN addgroup --system --gid 1001 nodejs && \
+RUN apk add --no-cache openssl && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
 COPY --from=builder /app/dist ./dist
@@ -34,7 +35,7 @@ USER nestjs
 
 EXPOSE 3001
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/ || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
 
 CMD ["npm", "run", "start:docker"]
