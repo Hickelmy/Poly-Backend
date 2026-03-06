@@ -7,9 +7,12 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Ambiente
+# Ambiente (nunca commitar credenciais)
 .env
 .env.local
+.env.development
+.env.staging
+.env.production
 .env.development.local
 .env.test.local
 .env.production.local

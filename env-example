@@ -1,25 +1,87 @@
+NODE_ENV=development
 PORT=3001
-DATABASE_URL="postgresql://user:password@localhost:5432/polys_db?schema=public"
 
-JWT_SECRET="troque-esta-chave-por-uma-bem-segura"
-JWT_EXPIRES_IN="30d"
+# =============================================
+# DATABASE - Supabase (PostgreSQL + PostGIS)
+# =============================================
+DATABASE_URL="postgresql://postgres.[REF]:[SENHA]@aws-0-[REGIAO].pooler.supabase.com:6543/postgres?schema=public"
 
-# Chave mestre para criptografia de dados sensíveis
-# Gere uma chave segura com: openssl rand -base64 32
-# IMPORTANTE: Use a MESMA chave no frontend (REACT_APP_ENCRYPTION_MASTER_KEY)
-ENCRYPTION_MASTER_KEY="sua-chave-mestre-super-secreta-aqui"
+# =============================================
+# SUPABASE (Storage, Realtime, etc.)
+# =============================================
+SUPABASE_URL="https://[REF].supabase.co"
+SUPABASE_ANON_KEY=""
+SUPABASE_SERVICE_ROLE_KEY=""
 
-# Em desenvolvimento pode deixar *, em produção use o domínio do front
+# =============================================
+# REDIS (Cache + BullMQ + Feature Flags)
+# =============================================
+REDIS_HOST="localhost"
+REDIS_PORT=6379
+REDIS_PASSWORD=""
+REDIS_DB=0
+
+# =============================================
+# JWT - Access Token (curto) + Refresh Token (longo)
+# =============================================
+JWT_SECRET="GERE-UMA-CHAVE-SEGURA-DE-256-BITS"
+JWT_ACCESS_TOKEN_TTL="15m"
+REFRESH_TOKEN_TTL_DAYS=30
+
+# =============================================
+# FIREBASE (Google Login)
+# =============================================
+FIREBASE_PROJECT_ID=""
+FIREBASE_CLIENT_EMAIL=""
+FIREBASE_PRIVATE_KEY=""
+
+# =============================================
+# CRIPTOGRAFIA
+# =============================================
+ENCRYPTION_MASTER_KEY="GERE-COM-openssl-rand-base64-32"
+
+# =============================================
+# CORS & URLs
+# =============================================
 CORS_ORIGIN=*
-
-# URL do frontend (para redirects e callbacks)
 FRONTEND_URL="http://localhost:5173"
-
-# URL do backend (para webhooks e callbacks)
 BACKEND_URL="http://localhost:3001"
 
-# Mercado Pago - Configuração
-# true para produção, false ou não definido para sandbox/test
-MERCADO_PAGO_PRODUCTION=false
+# =============================================
+# CAPTCHA (reCAPTCHA v3)
+# =============================================
+RECAPTCHA_SECRET_KEY=""
+RECAPTCHA_MIN_SCORE=0.5
 
+# =============================================
+# SENTRY (Error Tracking)
+# =============================================
+SENTRY_DSN=""
+SENTRY_TRACES_SAMPLE_RATE=0.1
 
+# =============================================
+# CLOUDFLARE (CDN)
+# =============================================
+# Configure o domínio no Cloudflare Dashboard.
+# O Cloudflare atua como proxy reverso (CDN).
+# Variáveis usadas para purge de cache:
+CLOUDFLARE_ZONE_ID=""
+CLOUDFLARE_API_TOKEN=""
+
+# =============================================
+# PAGAMENTOS
+# =============================================
+# STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_PUBLISHABLE_KEY=pk_test_...
+# PUBLIC_KEY=APP_USR-... (Mercado Pago)
+# ACESS_TOKEN=APP_USR-... (Mercado Pago)
+
+# =============================================
+# OPENAI (Moderação de conteúdo - texto e imagens)
+# =============================================
+OPENAI_API_KEY=sk-...
+
+# =============================================
+# LOGGING
+# =============================================
+LOG_LEVEL=debug
