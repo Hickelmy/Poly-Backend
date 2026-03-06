@@ -10,16 +10,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   async onModuleInit() {
-    const host = this.configService.get<string>('REDIS_HOST', 'localhost');
-    const port = this.configService.get<number>('REDIS_PORT', 6379);
-    const password = this.configService.get<string>('REDIS_PASSWORD', '');
-    const db = this.configService.get<number>('REDIS_DB', 0);
+    const url = this.configService.get<string>('UPSTASH_REDIS_URL', '');
 
-    this.client = new Redis({
-      host,
-      port,
-      password: password || undefined,
-      db,
+    this.client = new Redis(url, {
       retryStrategy: (times) => {
         if (times > 3) {
           this.logger.warn('Redis connection failed after 3 retries. Running without cache.');
