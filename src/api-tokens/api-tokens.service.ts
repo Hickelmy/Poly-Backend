@@ -74,6 +74,29 @@ export class ApiTokensService {
     };
   }
 
+  // Retorna a chave pública do Stripe (publishable key)
+  // Para Stripe, a chave pública começa com 'pk_' e a secreta com 'sk_'
+  async getStripePublishableKey() {
+    const token = await this.prisma.apiToken.findFirst({
+      where: { 
+        provider: 'stripe',
+        active: true,
+      },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    if (!token || !token.token) {
+      return null;
+    }
+
+    // Se o token começa com 'sk_', precisa da chave pública correspondente
+    // Por enquanto, retornamos null e vamos usar uma abordagem diferente
+    // A chave pública deve ser armazenada separadamente ou derivada
+    // Por segurança, vamos retornar null e o frontend vai usar uma variável de ambiente
+    // OU podemos adicionar um campo 'publishable_key' no modelo ApiToken
+    return null;
+  }
+
   async create(data: any) {
     if (!data.name || !data.provider || !data.token) {
       throw new BadRequestException('Nome, provedor e token são obrigatórios');

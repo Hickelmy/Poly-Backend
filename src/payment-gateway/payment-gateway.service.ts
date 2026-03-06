@@ -45,37 +45,14 @@ interface AbacatePayPixResponse {
   error: string | null;
 }
 
-interface MercadoPagoPreferenceResponse {
-  id: string;
-  init_point: string;
-  sandbox_init_point: string;
-  status: string;
-}
 
-interface MercadoPagoWebhookData {
-  type: string;
-  data: {
-    id: string;
-  };
-}
-
-interface MercadoPagoPaymentResponse {
+interface StripeCheckoutSessionResponse {
   id: string;
+  url: string;
+  amount_total: number;
+  currency: string;
   status: string;
-  status_detail: string;
-  external_reference?: string;
-  preference_id?: string;
-  metadata?: {
-    preference_id?: string;
-    productId?: string;
-    serviceId?: string;
-    userId?: string;
-    quantity?: number;
-    deliveryMethod?: string;
-  };
-  order?: {
-    id: string;
-  };
+  metadata?: Record<string, string>;
 }
 
 @Injectable()
@@ -325,193 +302,189 @@ export class PaymentGatewayService {
   }
 
   /**
-   * Cria um pagamento via Mercado Pago
+   * Cria um pagamento via Stripe
+   * Retorna um Payment Intent que pode ser usado no mobile para abrir o Stripe Payment Sheet
    */
-  async createMercadoPagoPayment(data: {
+  async createStripePayment(data: {
     amount: number; // em reais
     productId?: string;
     serviceId?: string;
+    projectId?: string;
     productTitle?: string;
     serviceTitle?: string;
+    projectTitle?: string;
     userId?: string;
     userEmail: string;
     quantity?: number;
-    deliveryMethod?: string;
-    deliveryAddress?: string;
-    returnUrl?: string;
+    currency?: string; // Padrão: 'brl'
   }) {
-    // Busca o token do Mercado Pago
-    const accessToken = await this.apiTokensService.getFullToken('mercado_pago');
+    // Busca o token do Stripe
+    const secretKey = await this.apiTokensService.getFullToken('stripe');
     
-    if (!accessToken) {
+    if (!secretKey) {
       throw new BadRequestException(
-        'Token do Mercado Pago não configurado. Configure em Configurações > API Tokens',
+        'Token do Stripe não configurado. Configure em Configurações > API Tokens',
       );
     }
 
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const title = data.productTitle || data.serviceTitle || 'Produto';
-    
-    // O amount deve estar em REAIS (ex: 1.75 para R$ 1,75)
-    let amountInReais = Number(data.amount);
-    
-    // Validação: detecta se o valor está em centavos ou reais
-    // Se o valor for >= 10 e for um número inteiro (sem decimais), 
-    // provavelmente está em centavos (ex: 175 centavos = R$ 1,75)
-    // Valores em reais geralmente têm decimais (ex: 1.75) ou são pequenos (< 10)
-    const hasDecimals = amountInReais % 1 !== 0;
-    const isLargeInteger = amountInReais >= 10 && amountInReais === Math.floor(amountInReais);
-    
-    if (isLargeInteger && !hasDecimals) {
-      // Se for um número inteiro grande, provavelmente está em centavos
-      console.warn(`Valor inteiro grande detectado (${amountInReais}), assumindo que está em centavos e convertendo para reais`);
-      amountInReais = amountInReais / 100;
+    // Valida que é uma secret key (começa com sk_), não uma publishable key (pk_)
+    if (!secretKey.startsWith('sk_')) {
+      throw new BadRequestException(
+        'Token do Stripe inválido. Use uma Secret Key (sk_...) e não uma Publishable Key (pk_...). Configure em Configurações > API Tokens',
+      );
     }
-    
-    // Garante que o valor está em reais (não negativo, não zero se for pagamento)
-    if (amountInReais <= 0) {
+
+    // Converte valor para centavos (Stripe usa centavos)
+    const amountInCents = Math.round(data.amount * 100);
+    const currency = (data.currency || 'brl').toLowerCase();
+
+    // Validação de valor
+    if (amountInCents <= 0) {
       throw new BadRequestException('Valor do pagamento deve ser maior que zero');
     }
-    
-    // IMPORTANTE: Mercado Pago espera valores em REAIS (com decimais), NÃO em centavos!
-    // Exemplo: R$ 1,00 deve ser enviado como 1.00, não como 100
-    // Garante que o valor está em reais com 2 casas decimais
-    const amountInReaisFormatted = parseFloat(amountInReais.toFixed(2));
-    
-    // Log para debug (remover em produção)
-    console.log(`Pagamento Mercado Pago - Valor recebido: ${data.amount}, Valor em reais: ${amountInReais}, Valor formatado: ${amountInReaisFormatted}`);
-    
-    // Validação adicional: se o valor for muito grande, algo está errado
-    if (amountInReaisFormatted > 100000) {
-      console.error(`ATENÇÃO: Valor muito alto (${amountInReaisFormatted}). Verifique se o valor está sendo enviado corretamente.`);
-    }
 
-    // Garante que returnUrl está definido e válido
-    const successUrl = (data.returnUrl || `${baseUrl}/payment/success?status=approved`).trim();
-    
-    // Valida que a URL de sucesso está presente e válida
-    if (!successUrl || successUrl === '') {
-      throw new BadRequestException('URL de retorno de sucesso não está definida');
-    }
-
-    // Valida formato da URL
-    try {
-      new URL(successUrl);
-    } catch (error) {
-      throw new BadRequestException(`URL de retorno inválida: ${successUrl}`);
-    }
-
-    // Cria a preferência de pagamento
-    // IMPORTANTE: unit_price deve ser em REAIS (ex: 1.00), não em centavos
-    const preference: any = {
-      items: [
-        {
-          title: title,
-          quantity: data.quantity || 1,
-          unit_price: amountInReaisFormatted, // Em reais, não em centavos!
-        },
-      ],
-      payer: {
-        email: data.userEmail,
-      },
-      back_urls: {
-        success: successUrl,
-        failure: `${baseUrl}/payment/success?status=rejected`,
-        pending: `${baseUrl}/payment/success?status=pending`,
-      },
-      // Removemos auto_return - o Mercado Pago está sendo muito restritivo
-      // O usuário será redirecionado manualmente após o pagamento usando back_urls
-      notification_url: `${process.env.BACKEND_URL || 'http://localhost:3001'}/payment-gateway/webhook/mercadopago`,
-      external_reference: data.productId || data.serviceId || 'unknown',
-      metadata: {
-        productId: data.productId || null,
-        serviceId: data.serviceId || null,
-        userId: data.userId || null,
-        quantity: data.quantity || 1,
-        deliveryMethod: data.deliveryMethod || 'pickup',
-      },
-    };
-
-    console.log('URLs de retorno configuradas:', {
-      success: successUrl,
-      failure: `${baseUrl}/payment/success?status=rejected`,
-      pending: `${baseUrl}/payment/success?status=pending`,
-    });
+    const title = data.productTitle || data.serviceTitle || data.projectTitle || 'Pagamento';
+    const externalId = data.productId || data.serviceId || data.projectId || 'unknown';
 
     try {
-      // A URL da API do Mercado Pago é a mesma para produção e sandbox
-      // A diferença está no Access Token usado (produção vs sandbox)
-      const apiUrl = 'https://api.mercadopago.com/checkout/preferences';
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      
+      // Função auxiliar para criar checkout session
+      const createSession = async (includePix: boolean) => {
+        const sessionParams = new URLSearchParams({
+          'line_items[0][price_data][currency]': currency,
+          'line_items[0][price_data][product_data][name]': title,
+          'line_items[0][price_data][unit_amount]': amountInCents.toString(),
+          'line_items[0][quantity]': (data.quantity || 1).toString(),
+          'mode': 'payment',
+          'success_url': `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+          'cancel_url': `${baseUrl}/payment/cancel`,
+          'customer_email': data.userEmail,
+        });
 
-      // Log do payload antes de enviar (remover em produção)
-      console.log('Payload enviado ao Mercado Pago:', JSON.stringify({
-        ...preference,
-        items: preference.items.map((item: any) => ({
-          ...item,
-          unit_price: item.unit_price,
-        })),
-      }, null, 2));
+        // Adiciona métodos de pagamento: cartão
+        sessionParams.append('payment_method_types[]', 'card');
+        
+        // Para BRL (Brasil), adiciona boleto e PIX (se solicitado)
+        if (currency === 'brl') {
+          sessionParams.append('payment_method_types[]', 'boleto');
+          if (includePix) {
+            sessionParams.append('payment_method_types[]', 'pix');
+          }
+        }
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(preference),
-      });
+        // Adiciona metadata
+        if (data.productId) sessionParams.append('metadata[productId]', data.productId);
+        if (data.serviceId) sessionParams.append('metadata[serviceId]', data.serviceId);
+        if (data.projectId) sessionParams.append('metadata[projectId]', data.projectId);
+        if (data.userId) sessionParams.append('metadata[userId]', data.userId);
+        sessionParams.append('metadata[userEmail]', data.userEmail);
+        sessionParams.append('metadata[quantity]', (data.quantity || 1).toString());
 
+        const sessionResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: sessionParams,
+        });
+
+        return sessionResponse;
+      };
+
+      // Tenta criar checkout com PIX primeiro (para BRL)
+      let response = await createSession(currency === 'brl');
+      
+      // Se PIX não estiver habilitado, tenta novamente sem PIX
       if (!response.ok) {
         const errorText = await response.text();
-        throw new BadRequestException(`Erro no Mercado Pago: ${errorText}`);
+        try {
+          const errorJson = JSON.parse(errorText);
+          // Se o erro for sobre PIX não estar habilitado, tenta sem PIX
+          if (
+            currency === 'brl' &&
+            errorJson.error?.message?.includes('pix') &&
+            (errorJson.error?.message?.includes('invalid') ||
+             errorJson.error?.message?.includes('not activated') ||
+             errorJson.error?.message?.includes('not enabled'))
+          ) {
+            console.log('PIX não está habilitado na conta Stripe. Criando checkout sem PIX...');
+            response = await createSession(false);
+            
+            if (!response.ok) {
+              const retryErrorText = await response.text();
+              throw new BadRequestException(`Erro no Stripe: ${retryErrorText}`);
+            }
+          } else {
+            throw new BadRequestException(`Erro no Stripe: ${errorText}`);
+          }
+        } catch (parseError) {
+          // Se não conseguir parsear o erro, lança o erro original
+          throw new BadRequestException(`Erro no Stripe: ${errorText}`);
+        }
       }
 
-      const result = (await response.json()) as MercadoPagoPreferenceResponse;
+      const checkoutSession = (await response.json()) as any;
 
-      console.log('Resposta do Mercado Pago:', {
-        id: result.id,
-        status: result.status,
-        init_point: result.init_point,
-        sandbox_init_point: result.sandbox_init_point,
-      });
+      // Cria a Order/Payment no banco
+      if (data.projectId) {
+        const payment = await this.prisma.projectPayment.create({
+          data: {
+            projectId: data.projectId,
+            userId: data.userId ?? null,
+            userEmail: data.userEmail,
+            amount: data.amount,
+            commissionAmount: data.amount * 0.1, // 10% de comissão
+            paymentMethod: 'credit_card',
+            status: 'pending',
+            isSubscription: false,
+            anonymous: false,
+            transactionId: checkoutSession.id,
+            gatewayProvider: 'stripe',
+          },
+        });
 
-      // Cria a Order no banco
-      // Usa 'as any' temporariamente até o Prisma Client ser regenerado com o campo quantity
-      const order = await this.prisma.order.create({
-        data: {
-          userId: data.userId ?? null,
-          userEmail: data.userEmail,
-          productId: data.productId ?? null,
-          serviceId: data.serviceId ?? null,
-          quantity: data.quantity || 1,
-          subtotal: data.amount,
-          shippingCost: 0,
-          total: data.amount,
-          deliveryMethod: data.deliveryMethod || 'pickup',
-          deliveryAddress: data.deliveryAddress || null,
-          paymentMethod: 'credit_card', // Mercado Pago permite múltiplos métodos
-          transactionId: result.id,
-          gatewayProvider: 'mercado_pago',
-          status: 'pending',
-        } as any, // Type assertion temporária - remover após regenerar Prisma Client
-      });
+        return {
+          success: true,
+          payment_id: payment.id,
+          session_id: checkoutSession.id,
+          checkout_url: checkoutSession.url,
+          amount: data.amount,
+          currency: currency,
+        };
+      } else if (data.productId || data.serviceId) {
+        const order = await this.prisma.order.create({
+          data: {
+            userId: data.userId ?? null,
+            userEmail: data.userEmail,
+            productId: data.productId ?? null,
+            serviceId: data.serviceId ?? null,
+            quantity: data.quantity || 1,
+            subtotal: data.amount,
+            shippingCost: 0,
+            total: data.amount,
+            deliveryMethod: 'pickup',
+            paymentMethod: 'credit_card',
+            transactionId: checkoutSession.id,
+            gatewayProvider: 'stripe',
+            status: 'pending',
+          } as any,
+        });
 
-      // Usa init_point para produção e sandbox_init_point para sandbox
-      // Se não tiver sandbox_init_point, usa init_point (produção)
-      const paymentUrl = result.sandbox_init_point || result.init_point;
+        return {
+          success: true,
+          order_id: order.id,
+          session_id: checkoutSession.id,
+          checkout_url: checkoutSession.url,
+          amount: data.amount,
+          currency: currency,
+        };
+      }
 
-      console.log('URL de pagamento gerada:', paymentUrl);
-
-      return {
-        success: true,
-        order_id: order.id,
-        preference_id: result.id,
-        payment_url: paymentUrl,
-        amount: data.amount,
-        status: result.status,
-      };
+      throw new BadRequestException('projectId, productId ou serviceId deve ser fornecido');
     } catch (error) {
-      console.error('Erro ao criar pagamento Mercado Pago:', error);
+      console.error('Erro ao criar pagamento Stripe:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -520,6 +493,7 @@ export class PaymentGatewayService {
       );
     }
   }
+
 
   // Webhook para receber confirmação de pagamento
   async handleWebhook(data: any) {
@@ -575,85 +549,157 @@ export class PaymentGatewayService {
     return { success: false, message: 'Pagamento não encontrado' };
   }
 
-  // Webhook específico do Mercado Pago
-  async handleMercadoPagoWebhook(data: MercadoPagoWebhookData) {
-    if (data.type !== 'payment') {
-      return { success: false, message: 'Tipo de webhook não suportado' };
-    }
+  // Webhook específico do Stripe
+  async handleStripeWebhook(data: any) {
+    const eventType = data.type;
+    const session = data.data?.object;
 
-    const paymentId = data.data.id;
-    if (!paymentId) {
-      return { success: false, message: 'ID do pagamento não informado' };
-    }
-
-    // Busca o token do Mercado Pago para consultar o status
-    const accessToken = await this.apiTokensService.getFullToken('mercado_pago');
-    if (!accessToken) {
-      return { success: false, message: 'Token do Mercado Pago não configurado' };
-    }
-
-    try {
-      // Consulta o status do pagamento no Mercado Pago
-      const response = await fetch(
-        `https://api.mercadopago.com/v1/payments/${paymentId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        },
-      );
-
-      if (!response.ok) {
-        return { success: false, message: 'Erro ao consultar pagamento no Mercado Pago' };
+    // Aceita checkout.session.completed (Checkout Session) ou payment_intent.succeeded (compatibilidade)
+    if (eventType === 'checkout.session.completed') {
+      const sessionId = session?.id;
+      if (!sessionId) {
+        return { success: false, message: 'ID da sessão não informado' };
       }
 
-      const payment = (await response.json()) as MercadoPagoPaymentResponse;
-      const status = payment.status;
+      try {
+        // Busca a Order ou Payment pelo transactionId (session_id)
+        const order = await this.prisma.order.findFirst({
+          where: { transactionId: sessionId },
+        });
 
-      // O external_reference contém o ID do produto/serviço
-      // Mas precisamos buscar pela preference_id que está no payment
-      const preferenceId = payment.metadata?.preference_id || payment.order?.id || payment.preference_id;
-      
-      if (!preferenceId) {
-        // Tenta buscar pelo external_reference se não encontrar preference_id
-        const externalRef = payment.external_reference;
-        if (externalRef) {
-          const order = await this.prisma.order.findFirst({
-            where: {
-              OR: [
-                { productId: externalRef },
-                { serviceId: externalRef },
-              ],
-            },
-            orderBy: { createdAt: 'desc' },
+        if (order) {
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: { status: 'paid' },
           });
-          
-          if (order) {
-            // Atualiza o status e desconta a quantidade
-            await this.updateOrderAndProduct(order, status, paymentId);
-            return { success: true, message: 'Webhook processado com sucesso' };
+
+          // Se o pagamento foi aprovado, desconta a quantidade do produto
+          if (order.productId && order.quantity) {
+            const product = await this.prisma.product.findUnique({
+              where: { id: order.productId },
+            });
+
+            if (product) {
+              const newQuantity = Math.max(0, product.quantityAvailable - order.quantity);
+              
+              await this.prisma.product.update({
+                where: { id: product.id },
+                data: {
+                  quantityAvailable: newQuantity,
+                  active: newQuantity > 0,
+                },
+              });
+            }
           }
+
+          return { success: true, message: 'Webhook processado com sucesso' };
         }
-        return { success: false, message: 'Preferência não encontrada' };
+
+        // Tenta buscar em ProjectPayment também
+        const payment = await this.prisma.projectPayment.findFirst({
+          where: { transactionId: sessionId },
+        });
+
+        if (payment) {
+          await this.prisma.projectPayment.update({
+            where: { id: payment.id },
+            data: { status: 'confirmed' },
+          });
+
+          // Atualiza o valor arrecadado do projeto
+          await this.prisma.project.update({
+            where: { id: payment.projectId },
+            data: {
+              currentAmount: {
+                increment: payment.amount,
+              },
+            },
+          });
+
+          return { success: true, message: 'Webhook processado com sucesso' };
+        }
+
+        return { success: false, message: 'Pagamento não encontrado' };
+      } catch (error) {
+        console.error('Erro ao processar webhook do Stripe:', error);
+        return { success: false, message: 'Erro ao processar webhook' };
       }
-
-      // Busca a Order pelo transactionId (preference_id)
-      const order = await this.prisma.order.findFirst({
-        where: { transactionId: preferenceId },
-      });
-
-      if (!order) {
-        return { success: false, message: 'Pedido não encontrado' };
-      }
-
-      // Atualiza o status e desconta a quantidade
-      await this.updateOrderAndProduct(order, status, paymentId);
-
-      return { success: true, message: 'Webhook processado com sucesso' };
-    } catch (error) {
-      console.error('Erro ao processar webhook do Mercado Pago:', error);
-      return { success: false, message: 'Erro ao processar webhook' };
     }
+
+    // Fallback para payment_intent.succeeded (compatibilidade com código antigo)
+    if (eventType === 'payment_intent.succeeded') {
+      const paymentIntent = session;
+      const paymentIntentId = paymentIntent?.id;
+      if (!paymentIntentId) {
+        return { success: false, message: 'ID do pagamento não informado' };
+      }
+
+      try {
+        // Busca a Order ou Payment pelo transactionId (payment_intent_id)
+        const order = await this.prisma.order.findFirst({
+          where: { transactionId: paymentIntentId },
+        });
+
+        if (order) {
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: { status: 'paid' },
+          });
+
+          // Se o pagamento foi aprovado, desconta a quantidade do produto
+          if (order.productId && order.quantity) {
+            const product = await this.prisma.product.findUnique({
+              where: { id: order.productId },
+            });
+
+            if (product) {
+              const newQuantity = Math.max(0, product.quantityAvailable - order.quantity);
+              
+              await this.prisma.product.update({
+                where: { id: product.id },
+                data: {
+                  quantityAvailable: newQuantity,
+                  active: newQuantity > 0,
+                },
+              });
+            }
+          }
+
+          return { success: true, message: 'Webhook processado com sucesso' };
+        }
+
+        // Tenta buscar em ProjectPayment também
+        const payment = await this.prisma.projectPayment.findFirst({
+          where: { transactionId: paymentIntentId },
+        });
+
+        if (payment) {
+          await this.prisma.projectPayment.update({
+            where: { id: payment.id },
+            data: { status: 'confirmed' },
+          });
+
+          // Atualiza o valor arrecadado do projeto
+          await this.prisma.project.update({
+            where: { id: payment.projectId },
+            data: {
+              currentAmount: {
+                increment: payment.amount,
+              },
+            },
+          });
+
+          return { success: true, message: 'Webhook processado com sucesso' };
+        }
+
+        return { success: false, message: 'Pagamento não encontrado' };
+      } catch (error) {
+        console.error('Erro ao processar webhook do Stripe:', error);
+        return { success: false, message: 'Erro ao processar webhook' };
+      }
+    }
+
+    return { success: false, message: 'Tipo de webhook não suportado' };
   }
 
   // Método auxiliar para atualizar order e descontar quantidade do produto

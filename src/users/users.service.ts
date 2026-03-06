@@ -126,23 +126,23 @@ export class UsersService {
 
     // Os dados já vêm criptografados do frontend, então apenas salvamos
     // A descriptografia acontece no findOne quando os dados são lidos
-    const data: any = {
-      name: dto.name,
-      role: dto.role,
-      avatarUrl: dto.avatarUrl,
-      bannerUrl: dto.bannerUrl,
-      pixKeyRandom: dto.pixKeyRandom,
-      pixKeyPhone: dto.pixKeyPhone,
-      pixKeyEmail: dto.pixKeyEmail,
-      pixKeyCpf: dto.pixKeyCpf,
-      phone: dto.phone,
-      cep: dto.cep,
-      state: dto.state,
-      city: dto.city,
-      neighborhood: dto.neighborhood,
-      street: dto.street,
-      houseNumber: dto.houseNumber,
-    };
+    // Só inclui campos que foram enviados (evita sobrescrever com undefined)
+    const data: any = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.role !== undefined) data.role = dto.role;
+    if (dto.avatarUrl !== undefined) data.avatarUrl = dto.avatarUrl;
+    if (dto.bannerUrl !== undefined) data.bannerUrl = dto.bannerUrl;
+    if (dto.pixKeyRandom !== undefined) data.pixKeyRandom = dto.pixKeyRandom;
+    if (dto.pixKeyPhone !== undefined) data.pixKeyPhone = dto.pixKeyPhone;
+    if (dto.pixKeyEmail !== undefined) data.pixKeyEmail = dto.pixKeyEmail;
+    if (dto.pixKeyCpf !== undefined) data.pixKeyCpf = dto.pixKeyCpf;
+    if (dto.phone !== undefined) data.phone = dto.phone;
+    if (dto.cep !== undefined) data.cep = dto.cep;
+    if (dto.state !== undefined) data.state = dto.state;
+    if (dto.city !== undefined) data.city = dto.city;
+    if (dto.neighborhood !== undefined) data.neighborhood = dto.neighborhood;
+    if (dto.street !== undefined) data.street = dto.street;
+    if (dto.houseNumber !== undefined) data.houseNumber = dto.houseNumber;
 
     // Handle residence fields (snake_case from frontend)
     if ((dto as any).residence_lat !== undefined) {
@@ -228,6 +228,40 @@ export class UsersService {
       residence_zone_id: decryptedUser.residenceZoneId,
       current_zone_id: decryptedUser.currentZoneId,
     };
+  }
+
+  async createFromFirebase(data: {
+    email: string;
+    name: string;
+    firebaseUid: string;
+    avatarUrl?: string;
+    authProvider: string;
+  }) {
+    const existing = await this.prisma.user.findUnique({
+      where: { email: data.email },
+    });
+
+    if (existing) {
+      throw new ConflictException('E-mail já está em uso');
+    }
+
+    return this.prisma.user.create({
+      data: {
+        email: data.email,
+        name: data.name,
+        firebaseUid: data.firebaseUid,
+        avatarUrl: data.avatarUrl,
+        authProvider: data.authProvider,
+        role: 'USER',
+      },
+    });
+  }
+
+  async linkFirebase(userId: string, firebaseUid: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { firebaseUid, authProvider: 'google' },
+    });
   }
 
   async remove(id: string) {

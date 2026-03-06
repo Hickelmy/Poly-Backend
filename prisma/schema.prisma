@@ -10,9 +10,11 @@ datasource db {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
-  passwordHash String
+  passwordHash String?
   name         String
   role         String   @default("USER")
+  authProvider String   @default("local") // "local", "google", "firebase"
+  firebaseUid  String?  @unique
   avatarUrl    String?
   bannerUrl    String?
   pixKeyRandom String?
@@ -47,6 +49,9 @@ model User {
   paymentTokens   PaymentToken[]
   orders          Order[]
   
+  // Acesso a zonas privadas
+  zoneAccesses    UserZoneAccess[]
+  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -58,6 +63,10 @@ model Zone {
   description String?
   color       String?  @default("#14b8a6")
   active      Boolean  @default(true)
+  
+  // Acesso à zona
+  isPublic    Boolean  @default(true)  // Se false, precisa de código para acessar
+  accessCode  String?  @unique         // Código de acesso para zonas privadas
   
   // Polygon coordinates in GeoJSON format
   polygonGeojson Json?
@@ -73,9 +82,24 @@ model Zone {
   services       Service[]
   projects       Project[]
   news           News[]
+  userAccesses   UserZoneAccess[]
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Acesso de usuários a zonas privadas
+model UserZoneAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  zoneId    String
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  zone      Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([userId, zoneId])
 }
 
 model Project {
@@ -405,31 +429,31 @@ model ServiceBooking {
   scheduledAt      DateTime
   durationHours   Float    @default(1)
   notes           String?
-  clientPriceType String?  // Tipo de cobrança escolhido pelo cliente: hora, diaria, servico
+  clientPriceType String?
   
   // Valores
-  totalAmount     Float  // Valor estimado inicial
-  finalAmount     Float? // Valor final calculado baseado no tempo real trabalhado
+  totalAmount     Float
+  finalAmount     Float?
   commissionAmount Float   @default(0)
   
   // Tempo real trabalhado
-  actualWorkedHours   Int?    // Horas trabalhadas
-  actualWorkedMinutes Int?    // Minutos trabalhados (0-59)
+  actualWorkedHours   Int?
+  actualWorkedMinutes Int?
   
   // Status
-  status          String   @default("requested") // requested, accepted, cancelled, in_progress, completed
-  paymentStatus   String   @default("pending") // pending, paid, refunded
+  status          String   @default("requested")
+  paymentStatus   String   @default("pending")
   
   // Código de confirmação único
-  serviceCode     String?  // Código único do serviço (gerado ao aceitar, o cliente recebe este código)
-  codeVerified    Boolean  @default(false) // Se o código foi verificado e serviço iniciado
+  serviceCode     String?
+  codeVerified    Boolean  @default(false)
   
-  // Localização e hora de início (para auditoria)
-  startedAt       DateTime? // Hora em que o serviço foi iniciado (quando o código foi verificado)
-  clientLat       Float?    // Latitude do cliente quando o serviço iniciou
-  clientLng       Float?    // Longitude do cliente quando o serviço iniciou
-  providerLat     Float?    // Latitude do prestador quando o serviço iniciou
-  providerLng     Float?    // Longitude do prestador quando o serviço iniciou
+  // Localização e hora de início
+  startedAt       DateTime?
+  clientLat       Float?
+  clientLng       Float?
+  providerLat     Float?
+  providerLng     Float?
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -437,5 +461,92 @@ model ServiceBooking {
   @@index([providerEmail])
   @@index([clientEmail])
   @@index([status])
+}
+
+// =============================================
+// FEATURE FLAGS - Sistema de controle granular
+// =============================================
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique // ex: "store_enabled", "projects_enabled", "payments_enabled"
+  name        String   // Nome legível: "Loja", "Projetos", "Pagamentos"
+  description String?
+  
+  // Controle global
+  enabled     Boolean  @default(true) // Liga/desliga globalmente
+  
+  // Controle por zona/região
+  enabledZoneIds  String[] // IDs das zonas onde está HABILITADO (vazio = todas)
+  disabledZoneIds String[] // IDs das zonas onde está DESABILITADO (prioridade sobre enabled)
+  
+  // Controle por cidade/estado (strings para flexibilidade)
+  enabledCities   String[] // Cidades onde está habilitado (vazio = todas)
+  disabledCities  String[] // Cidades onde está desabilitado
+  enabledStates   String[] // Estados onde está habilitado (vazio = todos)
+  disabledStates  String[] // Estados onde está desabilitado
+  
+  // Controle por role de usuário
+  allowedRoles    String[] // Roles que podem usar (vazio = todos). Ex: ["ADMIN", "MANAGER"]
+  blockedRoles    String[] // Roles bloqueados
+  
+  // Controle por IDs específicos de usuários
+  allowedUserIds  String[] // Usuários específicos que podem usar
+  blockedUserIds  String[] // Usuários específicos bloqueados
+  
+  // Porcentagem de rollout (0-100)
+  rolloutPercentage Int @default(100) // Para rollout gradual
+  
+  // Metadata
+  category    String?  // "module", "feature", "experiment", "maintenance"
+  priority    Int      @default(0) // Para ordenação no painel
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([key])
+  @@index([enabled])
+  @@index([category])
+}
+
+// =============================================
+// REFRESH TOKENS
+// =============================================
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  userId      String
+  userAgent   String?
+  ipAddress   String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  replacedBy  String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+// =============================================
+// IDEMPOTENCY - Previne pagamentos/ações duplicadas
+// =============================================
+
+model IdempotencyKey {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  userId        String?
+  method        String
+  path          String
+  statusCode    Int?
+  responseBody  Json?
+  
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime
+  
+  @@index([key])
+  @@index([expiresAt])
 }
 
