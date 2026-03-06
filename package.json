@@ -37,7 +37,7 @@
     "docker:staging:reset": "docker compose -f ../docker-compose.staging.yml down -v",
     "docker:prod": "docker compose -f ../docker-compose.prod.yml --env-file ../.env.prod up -d --build",
     "docker:prod:down": "docker compose -f ../docker-compose.prod.yml down",
-    "start:docker": "npx prisma migrate deploy && node dist/main.js",
+    "start:docker": "node dist/main.js",
     "----------- PRISMA (genéricos) -----------": "",
     "prisma:generate": "npx prisma generate"
   },
