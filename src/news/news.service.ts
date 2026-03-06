@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ZonesService } from '../zones/zones.service';
+import { ModerationService } from '../moderation/moderation.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -7,9 +9,36 @@ import { CreateReportDto } from './dto/create-report.dto';
 
 @Injectable()
 export class NewsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private zonesService: ZonesService,
+    private moderationService: ModerationService,
+  ) {}
 
-  async create(createNewsDto: CreateNewsDto, authorId: string) {
+  async create(createNewsDto: CreateNewsDto, authorId: string, userRole?: string) {
+    const zoneId = createNewsDto.zoneId || null;
+    if (zoneId) {
+      const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+      const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(authorId, { isAdmin });
+      if (accessibleZoneIds === null || !accessibleZoneIds.includes(zoneId)) {
+        throw new ForbiddenException('Você não tem acesso a esta zona');
+      }
+    }
+
+    const imageUrls = [
+      createNewsDto.imageUrl,
+      ...(createNewsDto.images || []),
+    ].filter((u): u is string => !!u && (u.startsWith('http') || u.startsWith('data:')));
+    const mod = await this.moderationService.moderateTextAndImages(
+      [createNewsDto.title, createNewsDto.content, createNewsDto.summary].filter(Boolean).join('\n\n'),
+      imageUrls,
+    );
+    if (mod.flagged) {
+      throw new BadRequestException(
+        'Conteúdo não permitido. Revise o texto e as imagens antes de publicar.',
+      );
+    }
+
     return (this.prisma as any).news.create({
       data: {
         ...createNewsDto,
@@ -41,11 +70,27 @@ export class NewsService {
     limit?: number;
     offset?: number;
     userId?: string;
+    userRole?: string;
   }) {
-    const { zoneId, publishedOnly = true, limit = 20, offset = 0, userId } = options || {};
+    const { zoneId, publishedOnly = true, limit = 20, offset = 0, userId, userRole } = options || {};
+    const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+
+    const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(userId, { isAdmin });
+    const requestedZoneId = zoneId;
+    const validZoneId =
+      accessibleZoneIds !== null &&
+      requestedZoneId &&
+      (requestedZoneId === 'null' || accessibleZoneIds.includes(requestedZoneId))
+        ? requestedZoneId
+        : null;
 
     const where: any = {};
-    if (zoneId) where.zoneId = zoneId;
+    if (validZoneId === 'null') where.zoneId = null;
+    else if (validZoneId) where.zoneId = validZoneId;
+    else if (accessibleZoneIds === null) {
+      /* gestores: sem filtro de zona */
+    } else if (accessibleZoneIds.length === 0) where.zoneId = null;
+    else where.OR = [{ zoneId: null }, { zoneId: { in: accessibleZoneIds } }];
     if (publishedOnly) where.isPublished = true;
 
     const news = await (this.prisma as any).news.findMany({
@@ -87,7 +132,7 @@ export class NewsService {
     }));
   }
 
-  async findOne(id: string, userId?: string) {
+  async findOne(id: string, userId?: string, userRole?: string) {
     const news = await (this.prisma as any).news.findUnique({
       where: { id },
       include: {
@@ -116,6 +161,15 @@ export class NewsService {
       throw new NotFoundException('Notícia não encontrada');
     }
 
+    // Zona exclusiva: gestores veem tudo; outros só se for global ou zona vinculada ao perfil
+    if (news.zoneId) {
+      const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
+      const accessibleZoneIds = await this.zonesService.getAccessibleZoneIds(userId, { isAdmin });
+      if (accessibleZoneIds !== null && !accessibleZoneIds.includes(news.zoneId)) {
+        throw new NotFoundException('Notícia não encontrada');
+      }
+    }
+
     return {
       ...news,
       zoneName: news.zone?.name,
@@ -134,6 +188,22 @@ export class NewsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (news.authorId !== userId && user?.role !== 'ADMIN') {
       throw new ForbiddenException('Você não tem permissão para editar esta notícia');
+    }
+
+    const finalTitle = updateNewsDto.title ?? news.title;
+    const finalContent = updateNewsDto.content ?? news.content;
+    const finalSummary = updateNewsDto.summary ?? news.summary;
+    const finalImageUrl = updateNewsDto.imageUrl ?? news.imageUrl;
+    const finalImages = updateNewsDto.images ?? news.images ?? [];
+    const textToModerate = [finalTitle, finalContent, finalSummary].filter(Boolean).join('\n\n');
+    const imageUrls = [finalImageUrl, ...finalImages].filter((u): u is string => !!u && (u.startsWith('http') || u.startsWith('data:')));
+    if (textToModerate || imageUrls.length > 0) {
+      const mod = await this.moderationService.moderateTextAndImages(textToModerate, imageUrls);
+      if (mod.flagged) {
+        throw new BadRequestException(
+          'Conteúdo não permitido. Revise o texto e as imagens antes de publicar.',
+        );
+      }
     }
 
     const publishedAt = updateNewsDto.isPublished === true && !news.publishedAt
@@ -259,6 +329,13 @@ export class NewsService {
     const news = await (this.prisma as any).news.findUnique({ where: { id: newsId } });
     if (!news) {
       throw new NotFoundException('Notícia não encontrada');
+    }
+
+    const mod = await this.moderationService.moderateText(dto.content);
+    if (mod.flagged) {
+      throw new BadRequestException(
+        'Comentário não permitido. Revise o texto antes de enviar.',
+      );
     }
 
     const [comment] = await this.prisma.$transaction([

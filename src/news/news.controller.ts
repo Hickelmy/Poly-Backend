@@ -16,6 +16,7 @@ import { UpdateNewsDto } from './dto/update-news.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 @Controller('news')
 export class NewsController {
@@ -26,10 +27,15 @@ export class NewsController {
   @Post()
   @UseGuards(JwtAuthGuard)
   create(@Body() createNewsDto: CreateNewsDto, @Request() req: any) {
-    return this.newsService.create(createNewsDto, req.user.sub);
+    return this.newsService.create(
+      createNewsDto,
+      req.user.userId ?? req.user.sub,
+      req.user.role,
+    );
   }
 
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   findAll(
     @Query('zoneId') zoneId?: string,
     @Query('publishedOnly') publishedOnly?: string,
@@ -42,13 +48,15 @@ export class NewsController {
       publishedOnly: publishedOnly !== 'false',
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
-      userId: req?.user?.sub,
+      userId: req?.user?.userId ?? req?.user?.sub,
+      userRole: req?.user?.role,
     });
   }
 
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   findOne(@Param('id') id: string, @Request() req?: any) {
-    return this.newsService.findOne(id, req?.user?.sub);
+    return this.newsService.findOne(id, req?.user?.userId ?? req?.user?.sub, req?.user?.role);
   }
 
   @Patch(':id')
