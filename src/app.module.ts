@@ -1,10 +1,18 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
+import { SupabaseModule } from './supabase/supabase.module';
+import { FirebaseModule } from './firebase/firebase.module';
+import { GeoModule } from './geo/geo.module';
+import { QueueModule } from './queue/queue.module';
+import { ObservabilityModule } from './observability/observability.module';
+import { MetricsController } from './observability/metrics.controller';
+import { CaptchaModule } from './captcha/captcha.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { SettingsModule } from './settings/settings.module';
@@ -18,19 +26,34 @@ import { PaymentGatewayModule } from './payment-gateway/payment-gateway.module';
 import { ZonesModule } from './zones/zones.module';
 import { NewsModule } from './news/news.module';
 import { ServiceBookingsModule } from './service-bookings/service-bookings.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
+import { ModerationModule } from './moderation/moderation.module';
+import { IdempotencyMiddleware } from './common/idempotency.middleware';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: [
+        `.env.${process.env.NODE_ENV || 'development'}.local`,
+        `.env.${process.env.NODE_ENV || 'development'}`,
+        '.env.local',
+        '.env',
+      ],
     }),
     ThrottlerModule.forRoot([
-      {
-        ttl: 60,
-        limit: 60,
-      },
+      { name: 'short', ttl: 1000, limit: 30 },    // 30 req/sec (burst) - evita 429 no carregamento do dashboard
+      { name: 'medium', ttl: 10000, limit: 100 }, // 100 req/10sec
+      { name: 'long', ttl: 60000, limit: 300 },   // 300 req/min
     ]),
     PrismaModule,
+    RedisModule,
+    SupabaseModule,
+    FirebaseModule,
+    GeoModule,
+    QueueModule,
+    ObservabilityModule,
+    CaptchaModule,
     UsersModule,
     AuthModule,
     SettingsModule,
@@ -44,8 +67,10 @@ import { ServiceBookingsModule } from './service-bookings/service-bookings.modul
     ZonesModule,
     NewsModule,
     ServiceBookingsModule,
+    FeatureFlagsModule,
+    ModerationModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, MetricsController],
   providers: [
     AppService,
     {
@@ -54,6 +79,15 @@ import { ServiceBookingsModule } from './service-bookings/service-bookings.modul
     },
   ],
 })
-export class AppModule {}
-
-
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // Idempotency for payment-related routes
+    consumer
+      .apply(IdempotencyMiddleware)
+      .forRoutes(
+        { path: 'payment-gateway/*', method: RequestMethod.POST },
+        { path: 'project-payments', method: RequestMethod.POST },
+        { path: 'orders', method: RequestMethod.POST },
+      );
+  }
+}
