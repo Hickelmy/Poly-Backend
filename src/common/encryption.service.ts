@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
+
+const isDev = process.env.NODE_ENV !== 'production';
 
 /**
  * Serviço de descriptografia para dados sensíveis
@@ -7,6 +9,7 @@ import * as crypto from 'crypto';
  */
 @Injectable()
 export class EncryptionService {
+  private readonly logger = new Logger(EncryptionService.name);
   /**
    * Deriva uma chave de criptografia a partir de uma string
    */
@@ -39,14 +42,14 @@ export class EncryptionService {
 
     // Verifica se o texto parece estar criptografado antes de tentar
     if (!this.isEncrypted(encryptedText)) {
-      console.log(`Texto não passou na validação isEncrypted para ${userEmail}`);
+      if (isDev) this.logger.log(`Texto não passou na validação isEncrypted para ${userEmail}`);
       return encryptedText; // Retorna o texto original se não estiver criptografado
     }
 
     // Decodifica de base64 uma vez
     const combined = Buffer.from(encryptedText, 'base64');
     if (combined.length < 28) {
-      console.log(`Dados muito curtos (${combined.length} bytes), mínimo esperado: 28 bytes`);
+      if (isDev) this.logger.log(`Dados muito curtos (${combined.length} bytes), mínimo esperado: 28 bytes`);
       return encryptedText;
     }
     
