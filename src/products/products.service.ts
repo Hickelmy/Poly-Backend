@@ -187,6 +187,12 @@ export class ProductsService {
       );
     }
 
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { name: true },
+    });
+    const resolvedSellerName = data.seller_name ?? data.sellerName ?? dbUser?.name ?? user.email;
+
     const created = await this.prisma.product.create({
       data: {
         title: data.title,
@@ -200,7 +206,7 @@ export class ProductsService {
         active: data.active ?? true,
         sellerId: user.userId,
         sellerEmail: user.email,
-        sellerName: data.seller_name ?? data.sellerName ?? data.seller_email ?? user.email,
+        sellerName: resolvedSellerName,
         zoneId: data.zone_id ?? data.zoneId ?? null,
         lat: data.lat ?? null,
         lng: data.lng ?? null,
