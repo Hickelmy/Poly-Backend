@@ -11,9 +11,7 @@ export class CreateUserDto {
   @IsString()
   name!: string;
 
-  @IsOptional()
-  @IsString()
-  role?: string;
+  // role is intentionally excluded — always 'USER' on registration
 
   // Campos de endereço (já vêm criptografados do frontend)
   @IsOptional()

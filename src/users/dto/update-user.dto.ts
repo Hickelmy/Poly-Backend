@@ -5,9 +5,7 @@ export class UpdateUserDto {
   @IsString()
   name?: string;
 
-  @IsOptional()
-  @IsString()
-  role?: string;
+  // role is intentionally excluded — use admin-only endpoint to change roles
 
   @IsOptional()
   @IsString()

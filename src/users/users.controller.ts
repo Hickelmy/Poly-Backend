@@ -13,6 +13,13 @@ interface RequestWithUser extends Request {
   };
 }
 
+const ADMIN_ROLES = ['ADMIN', 'administrador', 'admin'];
+const MANAGER_ROLES = ['MANAGER', 'gestor', ...ADMIN_ROLES];
+
+function isAdmin(role?: string) {
+  return role ? ADMIN_ROLES.includes(role) : false;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
@@ -25,21 +32,39 @@ export class UsersController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id') id: string, @Req() req: RequestWithUser) {
+    // Only the user themselves or an admin can view full profile
+    if (req.user?.userId !== id && !isAdmin(req.user?.role)) {
+      throw new ForbiddenException('Acesso negado');
+    }
     return this.usersService.findOne(id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateUserDto, @Req() req: RequestWithUser) {
-    // Só permite atualizar o próprio perfil (segurança)
-    if (req.user?.userId !== id) {
+    if (req.user?.userId !== id && !isAdmin(req.user?.role)) {
       throw new ForbiddenException('Você só pode atualizar seu próprio perfil');
     }
     return this.usersService.update(id, dto);
   }
 
+  @Patch(':id/role')
+  updateRole(
+    @Param('id') id: string,
+    @Body('role') role: string,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!isAdmin(req.user?.role)) {
+      throw new ForbiddenException('Apenas administradores podem alterar roles');
+    }
+    return this.usersService.updateRole(id, role);
+  }
+
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  remove(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (req.user?.userId !== id && !isAdmin(req.user?.role)) {
+      throw new ForbiddenException('Você só pode excluir sua própria conta');
+    }
     return this.usersService.remove(id);
   }
 }

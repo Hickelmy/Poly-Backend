@@ -20,7 +20,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    this.refreshTokenTtlDays = this.config.get<number>('REFRESH_TOKEN_TTL_DAYS', 30);
+    this.refreshTokenTtlDays = this.config.get<number>('REFRESH_TOKEN_TTL_DAYS', 4);
   }
 
   async validateUser(email: string, password: string) {

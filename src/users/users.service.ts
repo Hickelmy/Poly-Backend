@@ -29,7 +29,7 @@ export class UsersService {
       email: dto.email,
       passwordHash,
       name: dto.name,
-      role: dto.role || 'USER',
+      role: 'USER',
     };
 
     // Adiciona campos de endereço se fornecidos (já criptografados)
@@ -129,7 +129,7 @@ export class UsersService {
     // Só inclui campos que foram enviados (evita sobrescrever com undefined)
     const data: any = {};
     if (dto.name !== undefined) data.name = dto.name;
-    if (dto.role !== undefined) data.role = dto.role;
+    // role is excluded — use updateRole() to change roles
     if (dto.avatarUrl !== undefined) data.avatarUrl = dto.avatarUrl;
     if (dto.bannerUrl !== undefined) data.bannerUrl = dto.bannerUrl;
     if (dto.pixKeyRandom !== undefined) data.pixKeyRandom = dto.pixKeyRandom;
@@ -262,6 +262,15 @@ export class UsersService {
       where: { id: userId },
       data: { firebaseUid, authProvider: 'google' },
     });
+  }
+
+  async updateRole(id: string, role: string) {
+    await this.ensureExists(id);
+    const allowed = ['USER', 'MANAGER', 'ADMIN', 'SUPPORT'];
+    if (!allowed.includes(role)) {
+      throw new Error(`Role inválida: ${role}`);
+    }
+    return this.prisma.user.update({ where: { id }, data: { role }, select: { id: true, email: true, role: true } });
   }
 
   async remove(id: string) {

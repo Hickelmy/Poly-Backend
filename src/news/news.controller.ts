@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { NewsService } from './news.service';
 import { CreateNewsDto } from './dto/create-news.dto';
@@ -66,13 +67,13 @@ export class NewsController {
     @Body() updateNewsDto: UpdateNewsDto,
     @Request() req: any,
   ) {
-    return this.newsService.update(id, updateNewsDto, req.user.sub);
+    return this.newsService.update(id, updateNewsDto, req.user.userId);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   remove(@Param('id') id: string, @Request() req: any) {
-    return this.newsService.remove(id, req.user.sub);
+    return this.newsService.remove(id, req.user.userId);
   }
 
   // ========== LIKES ==========
@@ -80,13 +81,13 @@ export class NewsController {
   @Post(':id/like')
   @UseGuards(JwtAuthGuard)
   like(@Param('id') id: string, @Request() req: any) {
-    return this.newsService.like(id, req.user.sub);
+    return this.newsService.like(id, req.user.userId);
   }
 
   @Delete(':id/like')
   @UseGuards(JwtAuthGuard)
   unlike(@Param('id') id: string, @Request() req: any) {
-    return this.newsService.unlike(id, req.user.sub);
+    return this.newsService.unlike(id, req.user.userId);
   }
 
   // ========== COMMENTS ==========
@@ -103,7 +104,7 @@ export class NewsController {
     @Body() dto: CreateCommentDto,
     @Request() req: any,
   ) {
-    return this.newsService.addComment(id, req.user.sub, dto);
+    return this.newsService.addComment(id, req.user.userId, dto);
   }
 
   @Delete(':id/comments/:commentId')
@@ -113,7 +114,7 @@ export class NewsController {
     @Param('commentId') commentId: string,
     @Request() req: any,
   ) {
-    return this.newsService.removeComment(id, commentId, req.user.sub);
+    return this.newsService.removeComment(id, commentId, req.user.userId);
   }
 
   // ========== REPORTS ==========
@@ -125,7 +126,7 @@ export class NewsController {
     @Body() dto: CreateReportDto,
     @Request() req: any,
   ) {
-    return this.newsService.report(id, req.user.sub, dto);
+    return this.newsService.report(id, req.user.userId, dto);
   }
 
   @Get('reports')
@@ -133,7 +134,11 @@ export class NewsController {
   getReports(
     @Query('newsId') newsId?: string,
     @Query('status') status?: string,
+    @Request() req?: any,
   ) {
+    if (req?.user?.role !== 'ADMIN' && req?.user?.role !== 'MANAGER') {
+      throw new ForbiddenException('Apenas administradores podem ver relatórios');
+    }
     return this.newsService.getReports({ newsId, status });
   }
 
@@ -142,7 +147,11 @@ export class NewsController {
   updateReportStatus(
     @Param('reportId') reportId: string,
     @Body('status') status: string,
+    @Request() req: any,
   ) {
+    if (req?.user?.role !== 'ADMIN' && req?.user?.role !== 'MANAGER') {
+      throw new ForbiddenException('Apenas administradores podem gerenciar relatórios');
+    }
     return this.newsService.updateReportStatus(reportId, status);
   }
 }

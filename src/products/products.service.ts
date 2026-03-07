@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ZonesService } from '../zones/zones.service';
 import { ModerationService } from '../moderation/moderation.service';
@@ -210,10 +210,15 @@ export class ProductsService {
     return created;
   }
 
-  async update(id: string, data: any) {
+  async update(id: string, data: any, requestingUserId?: string, requestingUserRole?: string) {
     const existing = await this.prisma.product.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Produto não encontrado');
+    }
+    const isAdmin = requestingUserRole === 'ADMIN' || requestingUserRole === 'MANAGER';
+    const isOwner = existing.sellerId === requestingUserId;
+    if (!isAdmin && !isOwner) {
+      throw new ForbiddenException('Você não tem permissão para editar este produto');
     }
 
     // Atualiza apenas campos enviados (PATCH parcial)
@@ -249,7 +254,14 @@ export class ProductsService {
     return updated;
   }
 
-  async delete(id: string) {
+  async delete(id: string, requestingUserId?: string, requestingUserRole?: string) {
+    const existing = await this.prisma.product.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Produto não encontrado');
+    const isAdmin = requestingUserRole === 'ADMIN' || requestingUserRole === 'MANAGER';
+    const isOwner = existing.sellerId === requestingUserId;
+    if (!isAdmin && !isOwner) {
+      throw new ForbiddenException('Você não tem permissão para excluir este produto');
+    }
     await this.prisma.product.delete({ where: { id } });
     return { success: true };
   }

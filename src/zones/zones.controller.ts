@@ -9,10 +9,17 @@ import {
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ZonesService } from './zones.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+
+function requireAdminOrManager(role?: string) {
+  if (role !== 'ADMIN' && role !== 'MANAGER') {
+    throw new ForbiddenException('Apenas administradores ou gestores podem gerenciar zonas');
+  }
+}
 
 @Controller('zones')
 export class ZonesController {
@@ -21,6 +28,7 @@ export class ZonesController {
   @Post()
   @UseGuards(JwtAuthGuard)
   async create(
+    @Request() req: any,
     @Body()
     body: {
       name: string;
@@ -33,6 +41,7 @@ export class ZonesController {
       access_code?: string;
     },
   ) {
+    requireAdminOrManager(req.user?.role);
     return this.zonesService.create({
       name: body.name,
       description: body.description,
@@ -104,6 +113,7 @@ export class ZonesController {
   @Put(':id')
   @UseGuards(JwtAuthGuard)
   async update(
+    @Request() req: any,
     @Param('id') id: string,
     @Body()
     body: {
@@ -118,6 +128,7 @@ export class ZonesController {
       access_code?: string;
     },
   ) {
+    requireAdminOrManager(req.user?.role);
     return this.zonesService.update(id, {
       polygon_geojson: body.polygon_geojson,
       center_lat: body.center_lat,
@@ -133,7 +144,8 @@ export class ZonesController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  async delete(@Param('id') id: string) {
+  async delete(@Request() req: any, @Param('id') id: string) {
+    requireAdminOrManager(req.user?.role);
     await this.zonesService.delete(id);
     return { success: true, message: 'Zona excluída com sucesso' };
   }

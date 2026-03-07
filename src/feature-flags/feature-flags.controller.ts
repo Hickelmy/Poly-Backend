@@ -9,11 +9,23 @@ import {
   Query,
   UseGuards,
   Req,
+  ForbiddenException,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { FeatureFlagsService } from './feature-flags.service';
 import { CreateFeatureFlagDto } from './dto/create-feature-flag.dto';
 import { UpdateFeatureFlagDto } from './dto/update-feature-flag.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+
+interface RequestWithUser extends Request {
+  user?: { userId: string; email: string; role: string };
+}
+
+function requireAdminOrManager(role?: string) {
+  if (role !== 'ADMIN' && role !== 'MANAGER') {
+    throw new ForbiddenException('Apenas administradores ou gestores podem gerenciar feature flags');
+  }
+}
 
 @Controller('feature-flags')
 export class FeatureFlagsController {
@@ -73,13 +85,15 @@ export class FeatureFlagsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  async create(@Body() dto: CreateFeatureFlagDto) {
+  async create(@Body() dto: CreateFeatureFlagDto, @Req() req: RequestWithUser) {
+    requireAdminOrManager(req.user?.role);
     return this.featureFlagsService.create(dto);
   }
 
   @UseGuards(JwtAuthGuard)
   @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateFeatureFlagDto) {
+  async update(@Param('id') id: string, @Body() dto: UpdateFeatureFlagDto, @Req() req: RequestWithUser) {
+    requireAdminOrManager(req.user?.role);
     return this.featureFlagsService.update(id, dto);
   }
 
@@ -88,13 +102,16 @@ export class FeatureFlagsController {
   async toggle(
     @Param('key') key: string,
     @Body('enabled') enabled: boolean,
+    @Req() req: RequestWithUser,
   ) {
+    requireAdminOrManager(req.user?.role);
     return this.featureFlagsService.toggleGlobal(key, enabled);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string, @Req() req: RequestWithUser) {
+    requireAdminOrManager(req.user?.role);
     return this.featureFlagsService.remove(id);
   }
 }

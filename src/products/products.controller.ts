@@ -68,14 +68,14 @@ export class ProductsController {
 
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() body: any) {
-    return this.productsService.update(id, body);
+  update(@Param('id') id: string, @Body() body: any, @Req() req: RequestWithUser) {
+    return this.productsService.update(id, body, req.user!.userId, req.user!.role);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.productsService.delete(id);
+  remove(@Param('id') id: string, @Req() req: RequestWithUser) {
+    return this.productsService.delete(id, req.user!.userId, req.user!.role);
   }
 }
 
