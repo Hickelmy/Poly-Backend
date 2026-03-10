@@ -4,6 +4,7 @@ import {
   Get,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
 } from '@nestjs/common';
@@ -14,33 +15,42 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class PaymentGatewayController {
   constructor(private readonly paymentGatewayService: PaymentGatewayService) {}
 
-  // Cria um pagamento PIX via Abacate Pay
+  // Cria QR Code PIX via Abacate Pay (produto, serviço ou projeto)
   @Post('create-pix')
   @UseGuards(JwtAuthGuard)
   async createPixPayment(
     @Body()
     data: {
       amount: number;
-      project_id: string;
-      project_title: string;
+      project_id?: string;
+      project_title?: string;
+      product_id?: string;
+      product_title?: string;
+      service_id?: string;
+      service_title?: string;
+      quantity?: number;
       anonymous?: boolean;
     },
     @Request() req: any,
   ) {
-    return this.paymentGatewayService.createAbacatePayment({
+    const title = data.project_title || data.product_title || data.service_title;
+    return this.paymentGatewayService.createPixQRCodeDirect({
       amount: data.amount,
       projectId: data.project_id,
-      projectTitle: data.project_title,
+      productId: data.product_id,
+      serviceId: data.service_id,
+      title,
       userId: req.user.userId,
       userEmail: req.user.email,
+      quantity: data.quantity || 1,
     });
   }
 
-  // Gera QR Code PIX para um billing existente
-  @Post('generate-qrcode')
+  // Verifica status de um QR Code PIX pelo ID retornado pelo Abacate Pay
+  @Get('check-pix/:pixId')
   @UseGuards(JwtAuthGuard)
-  async generateQRCode(@Body() data: { billing_id: string }) {
-    return this.paymentGatewayService.createPixQRCode(data.billing_id);
+  async checkPixStatus(@Param('pixId') pixId: string) {
+    return this.paymentGatewayService.checkPixQRCodeStatus(pixId);
   }
 
   // Cria um pagamento via Stripe

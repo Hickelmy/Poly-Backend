@@ -62,6 +62,191 @@ export class PaymentGatewayService {
     private readonly apiTokensService: ApiTokensService,
   ) {}
 
+  private async getAbacatePayToken(): Promise<string> {
+    const envToken = process.env.ABACATE_PAY_TOKEN;
+    if (envToken) return envToken;
+    const dbToken = await this.apiTokensService.getFullToken('abacate_pay');
+    if (!dbToken) {
+      throw new BadRequestException(
+        'Token do Abacate Pay não configurado. Configure em Configurações > API Tokens',
+      );
+    }
+    return dbToken;
+  }
+
+  private async getStripeToken(): Promise<string> {
+    const envToken = process.env.STRIPE_SECRET_KEY;
+    if (envToken) return envToken;
+    const dbToken = await this.apiTokensService.getFullToken('stripe');
+    if (!dbToken) {
+      throw new BadRequestException(
+        'Token do Stripe não configurado. Configure em Configurações > API Tokens',
+      );
+    }
+    return dbToken;
+  }
+
+  async createPixQRCodeDirect(data: {
+    amount: number; // em reais
+    projectId?: string;
+    productId?: string;
+    serviceId?: string;
+    title?: string;
+    userId?: string;
+    userEmail: string;
+    quantity?: number;
+  }) {
+    const token = await this.getAbacatePayToken();
+    const amountInCents = Math.round(data.amount * 100);
+    const description = data.title || 'Pagamento Polys';
+
+    try {
+      const response = await fetch(
+        'https://api.abacatepay.com/v1/pixQrCode/create',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ amount: amountInCents, expiresIn: 3600, description }),
+        },
+      );
+
+      const result = (await response.json()) as AbacatePayPixResponse;
+
+      if (result.error) {
+        throw new BadRequestException(`Erro no Abacate Pay: ${result.error}`);
+      }
+
+      let paymentId: string | undefined;
+      let orderId: string | undefined;
+
+      if (data.projectId) {
+        const payment = await this.prisma.projectPayment.create({
+          data: {
+            projectId: data.projectId,
+            userId: data.userId ?? null,
+            userEmail: data.userEmail,
+            amount: data.amount,
+            commissionAmount: data.amount * 0.1,
+            paymentMethod: 'pix',
+            status: 'pending',
+            isSubscription: false,
+            anonymous: false,
+            transactionId: result.data.id,
+            gatewayProvider: 'abacate_pay',
+          },
+        });
+        paymentId = payment.id;
+      } else if (data.productId || data.serviceId) {
+        const order = await this.prisma.order.create({
+          data: {
+            userId: data.userId ?? null,
+            userEmail: data.userEmail,
+            productId: data.productId ?? null,
+            serviceId: data.serviceId ?? null,
+            quantity: data.quantity || 1,
+            subtotal: data.amount,
+            shippingCost: 0,
+            total: data.amount,
+            deliveryMethod: 'pickup',
+            paymentMethod: 'pix',
+            transactionId: result.data.id,
+            gatewayProvider: 'abacate_pay',
+            status: 'pending',
+          } as any,
+        });
+        orderId = order.id;
+      } else {
+        throw new BadRequestException('projectId, productId ou serviceId deve ser fornecido');
+      }
+
+      return {
+        success: true,
+        pix_id: result.data.id,
+        br_code: result.data.brCode,
+        qr_code_base64: result.data.brCodeBase64,
+        amount: data.amount,
+        expires_at: result.data.expiresAt,
+        payment_id: paymentId,
+        order_id: orderId,
+      };
+    } catch (error) {
+      console.error('Erro ao criar QR Code PIX:', error);
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException('Erro ao gerar QR Code PIX. Tente novamente.');
+    }
+  }
+
+  async checkPixQRCodeStatus(pixId: string) {
+    const token = await this.getAbacatePayToken();
+
+    try {
+      const response = await fetch(
+        `https://api.abacatepay.com/v1/pixQrCode/check?id=${pixId}`,
+        {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      const result = (await response.json()) as AbacatePayPixResponse;
+
+      if (result.error) {
+        throw new BadRequestException(`Erro ao verificar PIX: ${result.error}`);
+      }
+
+      if (result.data.status === 'PAID') {
+        const payment = await this.prisma.projectPayment.findFirst({
+          where: { transactionId: pixId },
+        });
+        if (payment && payment.status !== 'confirmed') {
+          await this.prisma.projectPayment.update({
+            where: { id: payment.id },
+            data: { status: 'confirmed' },
+          });
+          await this.prisma.project.update({
+            where: { id: payment.projectId },
+            data: { currentAmount: { increment: payment.amount } },
+          });
+        }
+
+        const order = await this.prisma.order.findFirst({
+          where: { transactionId: pixId },
+        });
+        if (order && order.status !== 'paid') {
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: { status: 'paid' },
+          });
+          if (order.productId && order.quantity) {
+            const product = await this.prisma.product.findUnique({
+              where: { id: order.productId },
+            });
+            if (product) {
+              const newQuantity = Math.max(0, product.quantityAvailable - order.quantity);
+              await this.prisma.product.update({
+                where: { id: product.id },
+                data: { quantityAvailable: newQuantity, active: newQuantity > 0 },
+              });
+            }
+          }
+        }
+      }
+
+      return {
+        pix_id: result.data.id,
+        status: result.data.status, // 'PENDING' | 'PAID' | 'EXPIRED'
+        amount: result.data.amount / 100,
+      };
+    } catch (error) {
+      console.error('Erro ao verificar status PIX:', error);
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException('Erro ao verificar status do PIX');
+    }
+  }
+
   /**
    * Cria um pagamento via Abacate Pay
    * IMPORTANTE: Dados sensíveis de cartão devem ser enviados diretamente do frontend ao gateway
@@ -318,14 +503,8 @@ export class PaymentGatewayService {
     quantity?: number;
     currency?: string; // Padrão: 'brl'
   }) {
-    // Busca o token do Stripe
-    const secretKey = await this.apiTokensService.getFullToken('stripe');
-    
-    if (!secretKey) {
-      throw new BadRequestException(
-        'Token do Stripe não configurado. Configure em Configurações > API Tokens',
-      );
-    }
+    // Busca o token do Stripe (env var tem prioridade sobre DB)
+    const secretKey = await this.getStripeToken();
 
     // Valida que é uma secret key (começa com sk_), não uma publishable key (pk_)
     if (!secretKey.startsWith('sk_')) {
