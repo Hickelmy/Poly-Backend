@@ -60,6 +60,13 @@ export class PaymentGatewayService {
 
   private getAbacatePayToken(): string {
     const token = process.env.ABACATE_PAY_TOKEN;
+    const allKeys = Object.keys(process.env);
+    const abacateKeys = allKeys.filter(k => k.toUpperCase().includes('ABACATE'));
+    console.log('[DEBUG] ABACATE_PAY_TOKEN present:', !!token);
+    console.log('[DEBUG] ABACATE_PAY_TOKEN length:', token?.length ?? 0);
+    console.log('[DEBUG] ABACATE_PAY_TOKEN first 6 chars:', token ? token.substring(0, 6) + '...' : 'N/A');
+    console.log('[DEBUG] Env keys containing "ABACATE":', abacateKeys);
+    console.log('[DEBUG] Total env vars:', allKeys.length);
     if (!token) {
       throw new BadRequestException('ABACATE_PAY_TOKEN não configurado nas variáveis de ambiente');
     }
@@ -68,6 +75,9 @@ export class PaymentGatewayService {
 
   private getStripeToken(): string {
     const token = process.env.STRIPE_SECRET_KEY;
+    const stripeKeys = Object.keys(process.env).filter(k => k.toUpperCase().includes('STRIPE'));
+    console.log('[DEBUG] STRIPE_SECRET_KEY present:', !!token);
+    console.log('[DEBUG] Env keys containing "STRIPE":', stripeKeys);
     if (!token) {
       throw new BadRequestException('STRIPE_SECRET_KEY não configurado nas variáveis de ambiente');
     }
