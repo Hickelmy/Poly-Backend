@@ -256,14 +256,7 @@ export class PaymentGatewayService {
     paymentToken?: string; // Token do cartão (se usar token salvo)
     installments?: number;
   }) {
-    // Busca o primeiro token ativo do Abacate Pay
-    const token = await this.apiTokensService.getFullToken('abacate_pay');
-
-    if (!token) {
-      throw new BadRequestException(
-        'Token do Abacate Pay não configurado. Configure em Configurações > API Tokens',
-      );
-    }
+    const token = this.getAbacatePayToken();
 
     // Converte valor para centavos (Abacate Pay usa centavos)
     const amountInCents = Math.round(data.amount * 100);
@@ -432,11 +425,7 @@ export class PaymentGatewayService {
 
   // Gera QR Code PIX diretamente
   async createPixQRCode(billingId: string) {
-    const token = await this.apiTokensService.getFullToken('abacate_pay');
-
-    if (!token) {
-      throw new BadRequestException('Token do Abacate Pay não configurado');
-    }
+    const token = this.getAbacatePayToken();
 
     try {
       const response = await fetch(
