@@ -18,9 +18,20 @@ interface RequestWithUser extends Request {
   user?: { userId: string; email: string; role: string };
 }
 
-function requireAdmin(role?: string) {
-  if (role !== 'ADMIN') {
-    throw new ForbiddenException('Apenas administradores podem gerenciar tokens de API');
+// MANAGER = nível máximo (controla tudo)
+// ADMIN = administrador parcial (suporte/fiscalização)
+const MANAGER_ROLES = ['MANAGER', 'gestor'];
+const PRIVILEGED_ROLES = [...MANAGER_ROLES, 'ADMIN', 'administrador', 'admin'];
+
+function requirePrivileged(role?: string) {
+  if (!role || !PRIVILEGED_ROLES.includes(role)) {
+    throw new ForbiddenException('Acesso restrito a administradores');
+  }
+}
+
+function requireManager(role?: string) {
+  if (!role || !MANAGER_ROLES.includes(role)) {
+    throw new ForbiddenException('Acesso restrito a gestores');
   }
 }
 
@@ -31,37 +42,37 @@ export class ApiTokensController {
 
   @Get()
   async findMany(@Req() req: RequestWithUser) {
-    requireAdmin(req.user?.role);
+    requireManager(req.user?.role);
     return this.apiTokensService.findMany();
   }
 
   @Get(':id')
   async findOne(@Param('id') id: string, @Req() req: RequestWithUser) {
-    requireAdmin(req.user?.role);
+    requireManager(req.user?.role);
     return this.apiTokensService.findOne(id);
   }
 
   @Post()
   async create(@Body() data: any, @Req() req: RequestWithUser) {
-    requireAdmin(req.user?.role);
+    requireManager(req.user?.role);
     return this.apiTokensService.create(data);
   }
 
   @Put(':id')
   async update(@Param('id') id: string, @Body() data: any, @Req() req: RequestWithUser) {
-    requireAdmin(req.user?.role);
+    requireManager(req.user?.role);
     return this.apiTokensService.update(id, data);
   }
 
   @Delete(':id')
   async delete(@Param('id') id: string, @Req() req: RequestWithUser) {
-    requireAdmin(req.user?.role);
+    requireManager(req.user?.role);
     return this.apiTokensService.delete(id);
   }
 
   @Post('reorder')
   async reorder(@Body() data: { token_ids: string[] }, @Req() req: RequestWithUser) {
-    requireAdmin(req.user?.role);
+    requireManager(req.user?.role);
     return this.apiTokensService.reorder(data.token_ids);
   }
 }
