@@ -64,8 +64,10 @@ export class PaymentGatewayService {
 
   private async getAbacatePayToken(): Promise<string> {
     const envToken = process.env.ABACATE_PAY_TOKEN;
+    console.log('[AbacatePay] env token present:', !!envToken, '| keys with ABACATE:', Object.keys(process.env).filter(k => k.includes('ABACATE')));
     if (envToken) return envToken;
     const dbToken = await this.apiTokensService.getFullToken('abacate_pay');
+    console.log('[AbacatePay] db token present:', !!dbToken);
     if (!dbToken) {
       throw new BadRequestException(
         'Token do Abacate Pay não configurado. Configure em Configurações > API Tokens',
