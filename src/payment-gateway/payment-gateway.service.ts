@@ -1,6 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ApiTokensService } from '../api-tokens/api-tokens.service';
 
 interface AbacatePayBillingResponse {
   data: {
@@ -57,35 +56,22 @@ interface StripeCheckoutSessionResponse {
 
 @Injectable()
 export class PaymentGatewayService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly apiTokensService: ApiTokensService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  private async getAbacatePayToken(): Promise<string> {
-    const envToken = process.env.ABACATE_PAY_TOKEN;
-    console.log('[AbacatePay] env token present:', !!envToken, '| keys with ABACATE:', Object.keys(process.env).filter(k => k.includes('ABACATE')));
-    if (envToken) return envToken;
-    const dbToken = await this.apiTokensService.getFullToken('abacate_pay');
-    console.log('[AbacatePay] db token present:', !!dbToken);
-    if (!dbToken) {
-      throw new BadRequestException(
-        'Token do Abacate Pay não configurado. Configure em Configurações > API Tokens',
-      );
+  private getAbacatePayToken(): string {
+    const token = process.env.ABACATE_PAY_TOKEN;
+    if (!token) {
+      throw new BadRequestException('ABACATE_PAY_TOKEN não configurado nas variáveis de ambiente');
     }
-    return dbToken;
+    return token;
   }
 
-  private async getStripeToken(): Promise<string> {
-    const envToken = process.env.STRIPE_SECRET_KEY;
-    if (envToken) return envToken;
-    const dbToken = await this.apiTokensService.getFullToken('stripe');
-    if (!dbToken) {
-      throw new BadRequestException(
-        'Token do Stripe não configurado. Configure em Configurações > API Tokens',
-      );
+  private getStripeToken(): string {
+    const token = process.env.STRIPE_SECRET_KEY;
+    if (!token) {
+      throw new BadRequestException('STRIPE_SECRET_KEY não configurado nas variáveis de ambiente');
     }
-    return dbToken;
+    return token;
   }
 
   async createPixQRCodeDirect(data: {
@@ -98,7 +84,7 @@ export class PaymentGatewayService {
     userEmail: string;
     quantity?: number;
   }) {
-    const token = await this.getAbacatePayToken();
+    const token = this.getAbacatePayToken();
     const amountInCents = Math.round(data.amount * 100);
     const description = data.title || 'Pagamento Polys';
 
@@ -182,7 +168,7 @@ export class PaymentGatewayService {
   }
 
   async checkPixQRCodeStatus(pixId: string) {
-    const token = await this.getAbacatePayToken();
+    const token = this.getAbacatePayToken();
 
     try {
       const response = await fetch(
@@ -506,7 +492,7 @@ export class PaymentGatewayService {
     currency?: string; // Padrão: 'brl'
   }) {
     // Busca o token do Stripe (env var tem prioridade sobre DB)
-    const secretKey = await this.getStripeToken();
+    const secretKey = this.getStripeToken();
 
     // Valida que é uma secret key (começa com sk_), não uma publishable key (pk_)
     if (!secretKey.startsWith('sk_')) {
