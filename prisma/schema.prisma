@@ -282,7 +282,7 @@ model Product {
   title             String
   description       String?
   price             Float
-  quantityAvailable Int      @default(0)
+  quantityAvailable Float    @default(0)
   category          String?
   condition         String?  // novo, usado_otimo, etc.
   unitType          String?  // unidade, kg, etc.
