@@ -288,6 +288,7 @@ model Product {
   unitType          String?  // unidade, kg, litro
   deliveryTypes     String[] // moto, carro, van, caminhao
   shippingPaidBy    String   @default("buyer") // seller = incluso no preço, buyer = comprador paga
+  weightKg          Float?   // peso por unidade em kg (opcional, para estimar custo de frete)
   images            String[]
   active            Boolean  @default(true)
 

@@ -204,6 +204,7 @@ export class ProductsService {
         unitType: data.unit_type ?? data.unitType,
         deliveryTypes: data.deliveryTypes ?? data.delivery_types ?? [],
         shippingPaidBy: data.shippingPaidBy ?? data.shipping_paid_by ?? 'buyer',
+        weightKg: data.weightKg ?? data.weight_kg ?? null,
         images: data.images ?? [],
         active: data.active ?? true,
         sellerId: user.userId,
@@ -247,6 +248,9 @@ export class ProductsService {
     }
     if (data.shippingPaidBy !== undefined || data.shipping_paid_by !== undefined) {
       updateData.shippingPaidBy = data.shippingPaidBy ?? data.shipping_paid_by;
+    }
+    if (data.weightKg !== undefined || data.weight_kg !== undefined) {
+      updateData.weightKg = data.weightKg ?? data.weight_kg;
     }
     if (data.images !== undefined) updateData.images = data.images;
     if (data.active !== undefined) updateData.active = data.active;
