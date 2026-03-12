@@ -285,7 +285,9 @@ model Product {
   quantityAvailable Float    @default(0)
   category          String?
   condition         String?  // novo, usado_otimo, etc.
-  unitType          String?  // unidade, kg, etc.
+  unitType          String?  // unidade, kg, litro
+  deliveryTypes     String[] // moto, carro, van, caminhao
+  shippingPaidBy    String   @default("buyer") // seller = incluso no preço, buyer = comprador paga
   images            String[]
   active            Boolean  @default(true)
 
