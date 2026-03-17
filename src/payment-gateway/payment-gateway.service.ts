@@ -93,6 +93,7 @@ export class PaymentGatewayService {
     userId?: string;
     userEmail: string;
     quantity?: number;
+    cartItems?: Array<{ product_id: string; quantity: number; price: number }>;
   }) {
     const token = this.getAbacatePayToken();
     const amountInCents = Math.round(data.amount * 100);
@@ -137,14 +138,18 @@ export class PaymentGatewayService {
           },
         });
         paymentId = payment.id;
-      } else if (data.productId || data.serviceId) {
+      } else if (data.productId || data.serviceId || data.cartItems?.length) {
+        const firstProductId = data.productId ?? data.cartItems?.[0]?.product_id ?? null;
+        const totalQty = data.cartItems
+          ? data.cartItems.reduce((s, i) => s + i.quantity, 0)
+          : (data.quantity || 1);
         const order = await this.prisma.order.create({
           data: {
             userId: data.userId ?? null,
             userEmail: data.userEmail,
-            productId: data.productId ?? null,
+            productId: firstProductId,
             serviceId: data.serviceId ?? null,
-            quantity: data.quantity || 1,
+            quantity: totalQty,
             subtotal: data.amount,
             shippingCost: 0,
             total: data.amount,
@@ -489,6 +494,7 @@ export class PaymentGatewayService {
     userEmail: string;
     quantity?: number;
     currency?: string; // Padrão: 'brl'
+    cartItems?: Array<{ product_id: string; quantity: number; price: number }>;
   }) {
     // Busca o token do Stripe (env var tem prioridade sobre DB)
     const secretKey = this.getStripeToken();
@@ -619,14 +625,18 @@ export class PaymentGatewayService {
           amount: data.amount,
           currency: currency,
         };
-      } else if (data.productId || data.serviceId) {
+      } else if (data.productId || data.serviceId || data.cartItems?.length) {
+        const firstProductId = data.productId ?? data.cartItems?.[0]?.product_id ?? null;
+        const totalQty = data.cartItems
+          ? data.cartItems.reduce((s, i) => s + i.quantity, 0)
+          : (data.quantity || 1);
         const order = await this.prisma.order.create({
           data: {
             userId: data.userId ?? null,
             userEmail: data.userEmail,
-            productId: data.productId ?? null,
+            productId: firstProductId,
             serviceId: data.serviceId ?? null,
-            quantity: data.quantity || 1,
+            quantity: totalQty,
             subtotal: data.amount,
             shippingCost: 0,
             total: data.amount,

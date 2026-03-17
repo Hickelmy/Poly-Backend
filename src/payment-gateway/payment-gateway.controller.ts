@@ -30,10 +30,11 @@ export class PaymentGatewayController {
       service_title?: string;
       quantity?: number;
       anonymous?: boolean;
+      cart_items?: Array<{ product_id: string; quantity: number; price: number }>;
     },
     @Request() req: any,
   ) {
-    const title = data.project_title || data.product_title || data.service_title;
+    const title = data.project_title || data.product_title || data.service_title || 'Carrinho de compras';
     return this.paymentGatewayService.createPixQRCodeDirect({
       amount: data.amount,
       projectId: data.project_id,
@@ -43,6 +44,7 @@ export class PaymentGatewayController {
       userId: req.user.userId,
       userEmail: req.user.email,
       quantity: data.quantity || 1,
+      cartItems: data.cart_items,
     });
   }
 
@@ -68,6 +70,7 @@ export class PaymentGatewayController {
       project_title?: string;
       quantity?: number;
       currency?: string;
+      cart_items?: Array<{ product_id: string; quantity: number; price: number }>;
     },
     @Request() req: any,
   ) {
@@ -83,6 +86,7 @@ export class PaymentGatewayController {
       userEmail: req.user.email,
       quantity: data.quantity || 1,
       currency: data.currency,
+      cartItems: data.cart_items,
     });
   }
 
