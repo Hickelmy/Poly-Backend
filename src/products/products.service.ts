@@ -213,6 +213,9 @@ export class ProductsService {
         zoneId: data.zone_id ?? data.zoneId ?? null,
         lat: data.lat ?? null,
         lng: data.lng ?? null,
+        discountPercent: data.discountPercent ?? data.discount_percent ?? null,
+        paymentMethods: data.paymentMethods ?? data.payment_methods ?? [],
+        sellerDelivery: data.sellerDelivery ?? data.seller_delivery ?? false,
       },
     });
     // Retorna apenas os campos do Prisma (camelCase)
@@ -259,6 +262,9 @@ export class ProductsService {
     }
     if (data.lat !== undefined) updateData.lat = data.lat;
     if (data.lng !== undefined) updateData.lng = data.lng;
+    if (data.discountPercent !== undefined || data.discount_percent !== undefined) updateData.discountPercent = data.discountPercent ?? data.discount_percent;
+    if (data.paymentMethods !== undefined || data.payment_methods !== undefined) updateData.paymentMethods = data.paymentMethods ?? data.payment_methods;
+    if (data.sellerDelivery !== undefined || data.seller_delivery !== undefined) updateData.sellerDelivery = data.sellerDelivery ?? data.seller_delivery;
 
     if (Object.keys(updateData).length === 0) {
       return existing;

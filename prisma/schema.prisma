@@ -302,6 +302,10 @@ model Product {
   lat               Float?
   lng               Float?
 
+  discountPercent   Float?   // % de desconto (0-100, null = sem desconto)
+  paymentMethods    String[] @default([]) // ["pix", "credit_card", "debit_card", "cash", "transfer"]
+  sellerDelivery    Boolean  @default(false) // vendedor realiza a entrega pessoalmente
+
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
