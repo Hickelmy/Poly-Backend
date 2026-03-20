@@ -29,6 +29,14 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
+    if ((user as any).isBanned) {
+      throw new UnauthorizedException('Esta conta foi banida do sistema.');
+    }
+    if ((user as any).isBlocked) {
+      const reason = (user as any).blockedReason;
+      throw new UnauthorizedException(reason ? `Conta bloqueada: ${reason}` : 'Esta conta está bloqueada.');
+    }
+
     if (!user.passwordHash) {
       throw new UnauthorizedException(
         'Esta conta usa login social. Use o Google para entrar.',
@@ -49,6 +57,10 @@ export class AuthService {
   }
 
   async register(dto: CreateUserDto) {
+    const banned = await this.prisma.bannedEmail.findUnique({ where: { email: dto.email } });
+    if (banned) {
+      throw new UnauthorizedException('Este e-mail foi banido do sistema.');
+    }
     const user = await this.usersService.create(dto);
     return {
       id: user.id,

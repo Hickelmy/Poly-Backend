@@ -273,6 +273,104 @@ export class UsersService {
     return this.prisma.user.update({ where: { id }, data: { role }, select: { id: true, email: true, role: true } });
   }
 
+  async blockUser(targetId: string, actorId: string, actorEmail: string, reason?: string) {
+    const target = await this.ensureExists(targetId);
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { isBlocked: true, blockedReason: reason ?? null, blockedAt: new Date(), blockedBy: actorId },
+    });
+    await this.createAuditLog({ actorId, actorEmail, targetId, targetEmail: target.email, action: 'block_user', entity: 'User', entityId: targetId, details: { reason } });
+    return { success: true };
+  }
+
+  async unblockUser(targetId: string, actorId: string, actorEmail: string) {
+    const target = await this.ensureExists(targetId);
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { isBlocked: false, blockedReason: null, blockedAt: null, blockedBy: null },
+    });
+    await this.createAuditLog({ actorId, actorEmail, targetId, targetEmail: target.email, action: 'unblock_user', entity: 'User', entityId: targetId });
+    return { success: true };
+  }
+
+  async banUser(targetId: string, actorId: string, actorEmail: string, reason?: string) {
+    const target = await this.ensureExists(targetId);
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { isBanned: true, isBlocked: true, blockedReason: reason ?? null, blockedAt: new Date(), blockedBy: actorId },
+    });
+    await this.prisma.bannedEmail.upsert({
+      where: { email: target.email },
+      create: { email: target.email, reason, bannedBy: actorId },
+      update: { reason, bannedBy: actorId },
+    });
+    await this.createAuditLog({ actorId, actorEmail, targetId, targetEmail: target.email, action: 'ban_user', entity: 'User', entityId: targetId, details: { reason } });
+    return { success: true };
+  }
+
+  async unbanUser(targetId: string, actorId: string, actorEmail: string) {
+    const target = await this.ensureExists(targetId);
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { isBanned: false, isBlocked: false, blockedReason: null, blockedAt: null, blockedBy: null },
+    });
+    await this.prisma.bannedEmail.deleteMany({ where: { email: target.email } });
+    await this.createAuditLog({ actorId, actorEmail, targetId, targetEmail: target.email, action: 'unban_user', entity: 'User', entityId: targetId });
+    return { success: true };
+  }
+
+  async getAuditLogs(filters: { targetId?: string; actorId?: string; action?: string; limit?: number }) {
+    return this.prisma.auditLog.findMany({
+      where: {
+        ...(filters.targetId ? { targetId: filters.targetId } : {}),
+        ...(filters.actorId ? { actorId: filters.actorId } : {}),
+        ...(filters.action ? { action: filters.action } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: filters.limit ?? 100,
+    });
+  }
+
+  async getUserActivity(userId: string) {
+    const user = await this.ensureExists(userId);
+    const [products, services, projects, comments, orders, auditLogs] = await Promise.all([
+      this.prisma.product.findMany({ where: { sellerId: userId }, select: { id: true, title: true, createdAt: true, active: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      this.prisma.service.findMany({ where: { providerId: userId }, select: { id: true, title: true, createdAt: true, active: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      this.prisma.project.findMany({ where: { ownerId: userId }, select: { id: true, title: true, createdAt: true, status: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      this.prisma.newsComment.findMany({ where: { userId }, select: { id: true, content: true, createdAt: true, newsId: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      this.prisma.order.findMany({ where: { userId }, select: { id: true, total: true, status: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      this.prisma.auditLog.findMany({ where: { targetId: userId }, orderBy: { createdAt: 'desc' }, take: 50 }),
+    ]);
+    return { user, products, services, projects, comments, orders, auditLogs };
+  }
+
+  async createAuditLog(data: { actorId?: string; actorEmail?: string; targetId?: string; targetEmail?: string; action: string; entity: string; entityId?: string; details?: any; ipAddress?: string }) {
+    return this.prisma.auditLog.create({ data });
+  }
+
+  async listUsers(limit = 500) {
+    const users = await this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true, email: true, name: true, role: true, avatarUrl: true,
+        phone: true, city: true, state: true, createdAt: true, updatedAt: true,
+        isBlocked: true, isBanned: true, blockedReason: true, blockedAt: true, blockedBy: true,
+      },
+    });
+    return users.map(u => ({
+      ...u,
+      full_name: u.name,
+      user_role: u.role?.toLowerCase(),
+      avatar_url: u.avatarUrl,
+      created_date: u.createdAt,
+      is_blocked: u.isBlocked,
+      is_banned: u.isBanned,
+      blocked_reason: u.blockedReason,
+      blocked_at: u.blockedAt,
+    }));
+  }
+
   async remove(id: string) {
     await this.ensureExists(id);
     await this.prisma.user.delete({ where: { id } });
@@ -280,10 +378,9 @@ export class UsersService {
   }
 
   private async ensureExists(id: string) {
-    const exists = await this.prisma.user.findUnique({ where: { id } });
-    if (!exists) {
-      throw new NotFoundException('Usuário não encontrado');
-    }
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true, email: true } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+    return user;
   }
 }
 

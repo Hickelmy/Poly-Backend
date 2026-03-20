@@ -53,7 +53,19 @@ model User {
   
   // Acesso a zonas privadas
   zoneAccesses    UserZoneAccess[]
-  
+
+  // Moderação
+  isBlocked      Boolean  @default(false)
+  isBanned       Boolean  @default(false)
+  blockedReason  String?
+  blockedAt      DateTime?
+  blockedBy      String?   // ID do gestor que bloqueou/baniu
+
+  // Audit logs criados por este usuário (ações que ELE fez)
+  auditLogs      AuditLog[] @relation("AuditLogActor")
+  // Audit logs onde este usuário foi o alvo
+  auditLogsTarget AuditLog[] @relation("AuditLogTarget")
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -559,3 +571,36 @@ model IdempotencyKey {
   @@index([expiresAt])
 }
 
+
+// =============================================
+// MODERAÇÃO DE USUÁRIOS
+// =============================================
+
+model BannedEmail {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  reason    String?
+  bannedBy  String?
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail String?
+  targetId   String?
+  target     User?    @relation("AuditLogTarget", fields: [targetId], references: [id], onDelete: SetNull)
+  targetEmail String?
+  action     String
+  entity     String
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([targetId])
+  @@index([action])
+  @@index([createdAt])
+}

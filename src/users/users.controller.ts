@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Delete, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Body, Controller, Get, Post, Param, Patch, Delete, UseGuards, Req, ForbiddenException, Query } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { UsersService } from './users.service';
@@ -71,6 +71,54 @@ export class UsersController {
       throw new ForbiddenException('Você só pode excluir sua própria conta');
     }
     return this.usersService.remove(id);
+  }
+
+  @Get()
+  listAll(@Req() req: RequestWithUser, @Query('limit') limit?: string) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.listUsers(limit ? parseInt(limit) : 500);
+  }
+
+  @Post(':id/block')
+  blockUser(@Param('id') id: string, @Body('reason') reason: string, @Req() req: RequestWithUser) {
+    if (!isManager(req.user?.role)) throw new ForbiddenException('Apenas gestores podem bloquear usuários');
+    return this.usersService.blockUser(id, req.user!.userId, req.user!.email, reason);
+  }
+
+  @Post(':id/unblock')
+  unblockUser(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isManager(req.user?.role)) throw new ForbiddenException('Apenas gestores podem desbloquear usuários');
+    return this.usersService.unblockUser(id, req.user!.userId, req.user!.email);
+  }
+
+  @Post(':id/ban')
+  banUser(@Param('id') id: string, @Body('reason') reason: string, @Req() req: RequestWithUser) {
+    if (!isManager(req.user?.role)) throw new ForbiddenException('Apenas gestores podem banir usuários');
+    return this.usersService.banUser(id, req.user!.userId, req.user!.email, reason);
+  }
+
+  @Post(':id/unban')
+  unbanUser(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isManager(req.user?.role)) throw new ForbiddenException('Apenas gestores podem desbanir usuários');
+    return this.usersService.unbanUser(id, req.user!.userId, req.user!.email);
+  }
+
+  @Get(':id/activity')
+  getUserActivity(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.getUserActivity(id);
+  }
+
+  @Get('audit-logs/all')
+  getAuditLogs(
+    @Req() req: RequestWithUser,
+    @Query('targetId') targetId?: string,
+    @Query('actorId') actorId?: string,
+    @Query('action') action?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.getAuditLogs({ targetId, actorId, action, limit: limit ? parseInt(limit) : 200 });
   }
 }
 
