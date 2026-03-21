@@ -169,7 +169,7 @@ export class ServicesService {
     });
     const modMap = new Map(mods.map((m) => [m.entityId, m]));
 
-    return items
+    const result = items
       .map((item) => {
         const mod = modMap.get(item.id);
         if (!mod) return item;
@@ -196,6 +196,11 @@ export class ServicesService {
         }
         return true;
       });
+
+    // Shadow ban: restricted items always go to the end
+    const normal = result.filter((i) => i._moderation?.status !== 'restricted');
+    const restricted = result.filter((i) => i._moderation?.status === 'restricted');
+    return [...normal, ...restricted];
   }
 
   async findOne(id: string, userId?: string, userRole?: string) {
