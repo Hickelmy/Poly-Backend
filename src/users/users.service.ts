@@ -333,15 +333,40 @@ export class UsersService {
 
   async getUserActivity(userId: string) {
     const user = await this.ensureExists(userId);
-    const [products, services, projects, comments, orders, auditLogs] = await Promise.all([
-      this.prisma.product.findMany({ where: { sellerId: userId }, select: { id: true, title: true, createdAt: true, active: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
-      this.prisma.service.findMany({ where: { providerId: userId }, select: { id: true, title: true, createdAt: true, active: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
-      this.prisma.project.findMany({ where: { ownerId: userId }, select: { id: true, title: true, createdAt: true, status: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
-      this.prisma.newsComment.findMany({ where: { userId }, select: { id: true, content: true, createdAt: true, newsId: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
-      this.prisma.order.findMany({ where: { userId }, select: { id: true, total: true, status: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 50 }),
+    const [products, services, projects, comments, orders, news, auditLogs] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { sellerId: userId },
+        select: { id: true, title: true, description: true, price: true, category: true, quantityAvailable: true, condition: true, images: true, active: true, createdAt: true },
+        orderBy: { createdAt: 'desc' }, take: 50,
+      }),
+      this.prisma.service.findMany({
+        where: { providerId: userId },
+        select: { id: true, title: true, description: true, pricePerHour: true, category: true, images: true, active: true, createdAt: true },
+        orderBy: { createdAt: 'desc' }, take: 50,
+      }),
+      this.prisma.project.findMany({
+        where: { ownerId: userId },
+        select: { id: true, title: true, description: true, status: true, goalValue: true, currentValue: true, createdAt: true },
+        orderBy: { createdAt: 'desc' }, take: 50,
+      }),
+      this.prisma.newsComment.findMany({
+        where: { userId },
+        select: { id: true, content: true, createdAt: true, newsId: true, news: { select: { title: true } } },
+        orderBy: { createdAt: 'desc' }, take: 50,
+      }),
+      this.prisma.order.findMany({
+        where: { userId },
+        select: { id: true, total: true, status: true, createdAt: true },
+        orderBy: { createdAt: 'desc' }, take: 50,
+      }),
+      this.prisma.news.findMany({
+        where: { authorId: userId },
+        select: { id: true, title: true, summary: true, isPublished: true, likesCount: true, commentsCount: true, createdAt: true },
+        orderBy: { createdAt: 'desc' }, take: 50,
+      }),
       this.prisma.auditLog.findMany({ where: { targetId: userId }, orderBy: { createdAt: 'desc' }, take: 50 }),
     ]);
-    return { user, products, services, projects, comments, orders, auditLogs };
+    return { user, products, services, projects, comments, orders, news, auditLogs };
   }
 
   async createAuditLog(data: { actorId?: string; actorEmail?: string; targetId?: string; targetEmail?: string; action: string; entity: string; entityId?: string; details?: any; ipAddress?: string }) {
