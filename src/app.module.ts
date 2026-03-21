@@ -28,6 +28,7 @@ import { NewsModule } from './news/news.module';
 import { ServiceBookingsModule } from './service-bookings/service-bookings.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { ModerationModule } from './moderation/moderation.module';
+import { EventsModule } from './events/events.module';
 import { IdempotencyMiddleware } from './common/idempotency.middleware';
 
 @Module({
@@ -69,6 +70,7 @@ import { IdempotencyMiddleware } from './common/idempotency.middleware';
     ServiceBookingsModule,
     FeatureFlagsModule,
     ModerationModule,
+    EventsModule,
   ],
   controllers: [AppController, MetricsController],
   providers: [

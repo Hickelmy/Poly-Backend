@@ -66,6 +66,9 @@ model User {
   // Audit logs onde este usuário foi o alvo
   auditLogsTarget AuditLog[] @relation("AuditLogTarget")
 
+  // Eventos comportamentais (analytics)
+  events         UserEvent[]
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -603,4 +606,27 @@ model AuditLog {
   @@index([targetId])
   @@index([action])
   @@index([createdAt])
+}
+
+// =============================================
+// ANALYTICS COMPORTAMENTAL
+// =============================================
+
+model UserEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String   // UUID aleatório por sessão (aba/tab)
+  page      String   // rota acessada (ex: /marketplace)
+  action    String   // 'pageview' | 'click' | 'search' | 'filter' | 'feature_use'
+  target    String?  // identificador do elemento (data-track)
+  metadata  Json?    // dados extras não-sensíveis (termo de busca, filtro aplicado)
+  duration  Int?     // segundos na página anterior (calculado no frontend)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([createdAt])
+  @@index([page])
+  @@index([action])
 }
