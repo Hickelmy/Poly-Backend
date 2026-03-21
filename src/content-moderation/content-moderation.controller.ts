@@ -39,8 +39,8 @@ export class ContentModerationController {
     @Req() req: ReqUser,
   ) {
     if (!PRIVILEGED.includes(req.user?.role ?? '')) throw new ForbiddenException('Acesso negado');
-    const { status, managerNotice, wasEdited, editNote, expiresAt } = body;
-    return this.svc.upsert(et, eid, { status, managerNotice, wasEdited, editNote, expiresAt: expiresAt ? new Date(expiresAt) : undefined }, req.user!.userId, req.user!.email);
+    const { status, managerNotice, noticeVisible, wasEdited, editNote, expiresAt } = body;
+    return this.svc.upsert(et, eid, { status, managerNotice, noticeVisible, wasEdited, editNote, expiresAt: expiresAt ? new Date(expiresAt) : undefined }, req.user!.userId, req.user!.email);
   }
 
   /** Grant approval seal */

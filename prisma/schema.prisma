@@ -54,6 +54,15 @@ model User {
   // Acesso a zonas privadas
   zoneAccesses    UserZoneAccess[]
 
+  // Verificação de perfil (selo azul)
+  isVerified        Boolean   @default(false)
+  verifiedAt        DateTime?
+  verifiedBy        String?   // ID do gestor que verificou
+  verifiedByEmail   String?
+
+  // Atividade
+  lastLoginAt    DateTime?
+
   // Moderação
   isBlocked      Boolean  @default(false)
   isBanned       Boolean  @default(false)
@@ -620,6 +629,7 @@ model ContentModeration {
   // Estado de moderação
   status          String    @default("active") // 'active' | 'restricted' | 'removed' | 'highlighted' | 'approved'
   managerNotice   String?   // aviso público exibido no conteúdo
+  noticeVisible   Boolean   @default(true)  // se o aviso deve ser exibido publicamente
   wasEdited       Boolean   @default(false)    // gestor editou o conteúdo
   editNote        String?   // nota interna da edição
 

@@ -319,8 +319,28 @@ export class UsersService {
     return { success: true };
   }
 
+  async verifyUser(targetId: string, actorId: string, actorEmail: string) {
+    const target = await this.ensureExists(targetId);
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { isVerified: true, verifiedAt: new Date(), verifiedBy: actorId, verifiedByEmail: actorEmail },
+    });
+    await this.createAuditLog({ actorId, actorEmail, targetId, targetEmail: target.email, action: 'verify_user', entity: 'User', entityId: targetId });
+    return { success: true };
+  }
+
+  async unverifyUser(targetId: string, actorId: string, actorEmail: string) {
+    const target = await this.ensureExists(targetId);
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { isVerified: false, verifiedAt: null, verifiedBy: null, verifiedByEmail: null },
+    });
+    await this.createAuditLog({ actorId, actorEmail, targetId, targetEmail: target.email, action: 'unverify_user', entity: 'User', entityId: targetId });
+    return { success: true };
+  }
+
   async getAuditLogs(filters: { targetId?: string; actorId?: string; action?: string; limit?: number }) {
-    return this.prisma.auditLog.findMany({
+    const logs = await this.prisma.auditLog.findMany({
       where: {
         ...(filters.targetId ? { targetId: filters.targetId } : {}),
         ...(filters.actorId ? { actorId: filters.actorId } : {}),
@@ -328,6 +348,91 @@ export class UsersService {
       },
       orderBy: { createdAt: 'desc' },
       take: filters.limit ?? 100,
+    });
+
+    // Enrich content-related logs with actual entity data (title, image, price, etc.)
+    const contentLogs = logs.filter((l) => l.action?.startsWith('content_') && l.entity && l.entityId);
+    if (contentLogs.length === 0) return logs;
+
+    // Group entity IDs by type
+    const byType: Record<string, string[]> = {};
+    for (const l of contentLogs) {
+      if (!byType[l.entity]) byType[l.entity] = [];
+      if (l.entityId && !byType[l.entity].includes(l.entityId)) byType[l.entity].push(l.entityId);
+    }
+
+    // Fetch all entities in parallel
+    const entityMap = new Map<string, any>();
+    const fetches: Promise<void>[] = [];
+
+    if (byType.product?.length) {
+      fetches.push(
+        this.prisma.product.findMany({
+          where: { id: { in: byType.product } },
+          select: { id: true, title: true, description: true, price: true, images: true, category: true, condition: true, sellerName: true, sellerEmail: true, active: true },
+        }).then((items) => items.forEach((i) => entityMap.set(`product:${i.id}`, { ...i, _entityType: 'product', _entityLabel: 'Produto' }))),
+      );
+    }
+    if (byType.service?.length) {
+      fetches.push(
+        this.prisma.service.findMany({
+          where: { id: { in: byType.service } },
+          select: { id: true, title: true, description: true, pricePerHour: true, images: true, serviceType: true, providerName: true, providerEmail: true, active: true },
+        }).then((items) => items.forEach((i) => entityMap.set(`service:${i.id}`, { ...i, _entityType: 'service', _entityLabel: 'Serviço' }))),
+      );
+    }
+    if (byType.project?.length) {
+      fetches.push(
+        this.prisma.project.findMany({
+          where: { id: { in: byType.project } },
+          select: { id: true, title: true, description: true, imageUrl: true, status: true, targetAmount: true, ownerEmail: true },
+        }).then((items) => items.forEach((i) => entityMap.set(`project:${i.id}`, { ...i, _entityType: 'project', _entityLabel: 'Projeto' }))),
+      );
+    }
+    if (byType.news?.length) {
+      fetches.push(
+        this.prisma.news.findMany({
+          where: { id: { in: byType.news } },
+          select: { id: true, title: true, summary: true, imageUrl: true },
+        }).then((items) => items.forEach((i) => entityMap.set(`news:${i.id}`, { ...i, _entityType: 'news', _entityLabel: 'Notícia' }))),
+      );
+    }
+    if (byType.comment?.length) {
+      fetches.push(
+        this.prisma.newsComment.findMany({
+          where: { id: { in: byType.comment } },
+          select: { id: true, content: true, newsId: true },
+        }).then((items) => items.forEach((i) => entityMap.set(`comment:${i.id}`, { ...i, title: i.content?.slice(0, 80), _entityType: 'comment', _entityLabel: 'Comentário' }))),
+      );
+    }
+
+    await Promise.all(fetches);
+
+    // Also fetch current moderation state for each entity
+    const modEntities = contentLogs
+      .filter((l) => l.entity && l.entityId)
+      .map((l) => ({ entityType: l.entity, entityId: l.entityId! }));
+    const modRecords = modEntities.length > 0
+      ? await this.prisma.contentModeration.findMany({
+          where: { OR: modEntities.map((e) => ({ entityType: e.entityType, entityId: e.entityId })) },
+        })
+      : [];
+    const modMap = new Map(modRecords.map((m) => [`${m.entityType}:${m.entityId}`, m]));
+
+    return logs.map((log) => {
+      if (!log.action?.startsWith('content_') || !log.entity || !log.entityId) return log;
+      const key = `${log.entity}:${log.entityId}`;
+      const entity = entityMap.get(key) || null;
+      const currentMod = modMap.get(key) || null;
+      return {
+        ...log,
+        _content: entity,
+        _currentModeration: currentMod ? {
+          status: currentMod.status,
+          managerNotice: currentMod.managerNotice,
+          expiresAt: currentMod.expiresAt,
+        } : null,
+      };
     });
   }
 
@@ -381,6 +486,8 @@ export class UsersService {
         id: true, email: true, name: true, role: true, avatarUrl: true,
         phone: true, city: true, state: true, createdAt: true, updatedAt: true,
         isBlocked: true, isBanned: true, blockedReason: true, blockedAt: true, blockedBy: true,
+        isVerified: true, verifiedAt: true, verifiedByEmail: true,
+        lastLoginAt: true,
       },
     });
     return users.map(u => ({
@@ -391,6 +498,8 @@ export class UsersService {
       created_date: u.createdAt,
       is_blocked: u.isBlocked,
       is_banned: u.isBanned,
+      is_verified: u.isVerified,
+      last_login_at: u.lastLoginAt,
       blocked_reason: u.blockedReason,
       blocked_at: u.blockedAt,
     }));

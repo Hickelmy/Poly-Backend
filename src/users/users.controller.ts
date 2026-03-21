@@ -103,6 +103,18 @@ export class UsersController {
     return this.usersService.unbanUser(id, req.user!.userId, req.user!.email);
   }
 
+  @Post(':id/verify')
+  verifyUser(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isManager(req.user?.role)) throw new ForbiddenException('Apenas gestores podem verificar perfis');
+    return this.usersService.verifyUser(id, req.user!.userId, req.user!.email);
+  }
+
+  @Post(':id/unverify')
+  unverifyUser(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isManager(req.user?.role)) throw new ForbiddenException('Apenas gestores podem remover verificação');
+    return this.usersService.unverifyUser(id, req.user!.userId, req.user!.email);
+  }
+
   @Get(':id/activity')
   getUserActivity(@Param('id') id: string, @Req() req: RequestWithUser) {
     if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');

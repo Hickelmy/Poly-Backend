@@ -126,7 +126,22 @@ export class ProductsService {
     });
 
     // Enrich with moderation data and filter removed items
-    const enriched = await this.enrichWithModeration(items, 'product', userId, isAdmin);
+    const modEnriched = await this.enrichWithModeration(items, 'product', userId, isAdmin);
+
+    // Enrich with seller verification status
+    const sellerIds = [...new Set(modEnriched.map((i) => i.sellerId).filter(Boolean))];
+    const verifiedMap = new Map<string, boolean>();
+    if (sellerIds.length > 0) {
+      const sellers = await this.prisma.user.findMany({
+        where: { id: { in: sellerIds } },
+        select: { id: true, isVerified: true },
+      });
+      sellers.forEach((s) => verifiedMap.set(s.id, s.isVerified));
+    }
+    const enriched = modEnriched.map((item) => ({
+      ...item,
+      _sellerVerified: item.sellerId ? (verifiedMap.get(item.sellerId) ?? false) : false,
+    }));
 
     if (sortByProximity && userLat != null && userLng != null) {
       const itemsWithDistance = enriched.map((item) => {
@@ -187,6 +202,7 @@ export class ProductsService {
           _moderation: {
             status: effectiveStatus,
             managerNotice: mod.managerNotice,
+            noticeVisible: mod.noticeVisible ?? true,
             wasEdited: mod.wasEdited,
             approvedAt: mod.approvedAt,
             approvedByEmail: mod.approvedByEmail,
@@ -204,10 +220,11 @@ export class ProductsService {
         return true;
       });
 
-    // Shadow ban: restricted items always go to the end of the list
-    const normal = result.filter((i) => i._moderation?.status !== 'restricted');
+    // Highlighted items go to the top (boost); restricted go to the end (shadow ban)
+    const highlighted = result.filter((i) => i._moderation?.status === 'highlighted');
+    const normal = result.filter((i) => !['highlighted', 'restricted'].includes(i._moderation?.status));
     const restricted = result.filter((i) => i._moderation?.status === 'restricted');
-    return [...normal, ...restricted];
+    return [...highlighted, ...normal, ...restricted];
   }
 
   async findOne(id: string, userId?: string, userRole?: string) {

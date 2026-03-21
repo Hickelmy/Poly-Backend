@@ -6,6 +6,7 @@ export type ModerationStatus = 'active' | 'restricted' | 'removed' | 'highlighte
 export interface ModerationAction {
   status?: ModerationStatus;
   managerNotice?: string | null;
+  noticeVisible?: boolean;
   wasEdited?: boolean;
   editNote?: string | null;
   expiresAt?: Date | null;
