@@ -341,12 +341,12 @@ export class UsersService {
       }),
       this.prisma.service.findMany({
         where: { providerId: userId },
-        select: { id: true, title: true, description: true, pricePerHour: true, category: true, images: true, active: true, createdAt: true },
+        select: { id: true, title: true, description: true, pricePerHour: true, serviceType: true, images: true, active: true, createdAt: true },
         orderBy: { createdAt: 'desc' }, take: 50,
       }),
       this.prisma.project.findMany({
         where: { ownerId: userId },
-        select: { id: true, title: true, description: true, status: true, goalValue: true, currentValue: true, createdAt: true },
+        select: { id: true, title: true, description: true, status: true, targetAmount: true, currentAmount: true, createdAt: true },
         orderBy: { createdAt: 'desc' }, take: 50,
       }),
       this.prisma.newsComment.findMany({
