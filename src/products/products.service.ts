@@ -245,7 +245,36 @@ export class ProductsService {
       }
     }
 
-    return product;
+    // Enrich with moderation data
+    const mod = await this.prisma.contentModeration.findFirst({
+      where: { entityType: 'product', entityId: id },
+    });
+    let _moderation: any = undefined;
+    if (mod) {
+      const isExpired = mod.expiresAt && new Date(mod.expiresAt) < new Date();
+      _moderation = {
+        status: isExpired ? 'active' : mod.status,
+        managerNotice: mod.managerNotice,
+        noticeVisible: mod.noticeVisible ?? true,
+        wasEdited: mod.wasEdited,
+        approvedAt: mod.approvedAt,
+        approvedByEmail: mod.approvedByEmail,
+        approvalNote: mod.approvalNote,
+        expiresAt: mod.expiresAt,
+      };
+    }
+
+    // Enrich with seller verification
+    let _sellerVerified = false;
+    if (product.sellerId) {
+      const seller = await this.prisma.user.findUnique({
+        where: { id: product.sellerId },
+        select: { isVerified: true },
+      });
+      _sellerVerified = seller?.isVerified ?? false;
+    }
+
+    return { ...product, _moderation, _sellerVerified };
   }
 
   async create(data: any, user: { userId: string; email: string }) {
