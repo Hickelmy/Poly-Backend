@@ -77,6 +77,7 @@ export class UsersService {
         residenceLng: true,
         residenceZoneId: true,
         currentZoneId: true,
+        isVerified: true,
         createdAt: true,
         updatedAt: true,
       },
