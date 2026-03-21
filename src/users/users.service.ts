@@ -346,7 +346,7 @@ export class UsersService {
       }),
       this.prisma.project.findMany({
         where: { ownerId: userId },
-        select: { id: true, title: true, description: true, status: true, targetAmount: true, currentAmount: true, createdAt: true },
+        select: { id: true, title: true, description: true, status: true, targetAmount: true, currentAmount: true, imageUrl: true, createdAt: true },
         orderBy: { createdAt: 'desc' }, take: 50,
       }),
       this.prisma.newsComment.findMany({
@@ -361,7 +361,7 @@ export class UsersService {
       }),
       this.prisma.news.findMany({
         where: { authorId: userId },
-        select: { id: true, title: true, summary: true, isPublished: true, likesCount: true, commentsCount: true, createdAt: true },
+        select: { id: true, title: true, summary: true, imageUrl: true, isPublished: true, likesCount: true, commentsCount: true, createdAt: true },
         orderBy: { createdAt: 'desc' }, take: 50,
       }),
       this.prisma.auditLog.findMany({ where: { targetId: userId }, orderBy: { createdAt: 'desc' }, take: 50 }),
