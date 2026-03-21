@@ -125,8 +125,11 @@ export class ProductsService {
       take: !sortByProximity && limit && Number.isFinite(limit) ? limit : undefined,
     });
 
+    // Enrich with moderation data and filter removed items
+    const enriched = await this.enrichWithModeration(items, 'product', userId, isAdmin);
+
     if (sortByProximity && userLat != null && userLng != null) {
-      const itemsWithDistance = items.map((item) => {
+      const itemsWithDistance = enriched.map((item) => {
         let dist = Infinity;
         if (item.lat != null && item.lng != null) {
           dist = haversineDistance(userLat, userLng, item.lat, item.lng);
@@ -151,7 +154,56 @@ export class ProductsService {
       }));
     }
 
-    return items;
+    return enriched;
+  }
+
+  /**
+   * Bulk-fetch ContentModeration records and attach to items.
+   * - Removes items with status='removed' (unless owner or admin)
+   * - Checks expiresAt and treats expired moderation as 'active'
+   * - Attaches _moderation field with status, managerNotice, approval info
+   */
+  private async enrichWithModeration(items: any[], entityType: string, userId?: string, isAdmin = false) {
+    if (items.length === 0) return items;
+
+    const ids = items.map((i) => i.id);
+    const mods = await this.prisma.contentModeration.findMany({
+      where: { entityType, entityId: { in: ids } },
+    });
+
+    const modMap = new Map(mods.map((m) => [m.entityId, m]));
+
+    return items
+      .map((item) => {
+        const mod = modMap.get(item.id);
+        if (!mod) return item;
+
+        // Check if moderation has expired
+        const isExpired = mod.expiresAt && new Date(mod.expiresAt) < new Date();
+        const effectiveStatus = isExpired ? 'active' : mod.status;
+
+        return {
+          ...item,
+          _moderation: {
+            status: effectiveStatus,
+            managerNotice: mod.managerNotice,
+            wasEdited: mod.wasEdited,
+            approvedAt: mod.approvedAt,
+            approvedByEmail: mod.approvedByEmail,
+            approvalNote: mod.approvalNote,
+            expiresAt: mod.expiresAt,
+          },
+        };
+      })
+      .filter((item) => {
+        const status = item._moderation?.status;
+        if (status === 'removed') {
+          // Owner and admins can still see removed items
+          const ownerId = item.sellerId ?? item.providerId ?? item.ownerId ?? item.authorId;
+          return isAdmin || (userId && ownerId === userId);
+        }
+        return true;
+      });
   }
 
   async findOne(id: string, userId?: string, userRole?: string) {

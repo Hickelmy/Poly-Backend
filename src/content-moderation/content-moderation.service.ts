@@ -44,19 +44,58 @@ export class ContentModerationService {
       update: data,
     });
 
+    // Resolve the content owner for audit log targetId
+    const owner = await this.resolveContentOwner(entityType, entityId);
+
     // Write to audit log
     await this.prisma.auditLog.create({
       data: {
         actorId,
         actorEmail,
+        targetId: owner?.id ?? null,
+        targetEmail: owner?.email ?? null,
         action: `content_${action.status ?? 'moderated'}`,
         entity: entityType,
         entityId,
-        details: { ...action },
+        details: { ...action, contentTitle: owner?.title },
       },
     });
 
     return result;
+  }
+
+  private async resolveContentOwner(entityType: string, entityId: string): Promise<{ id?: string; email?: string; title?: string } | null> {
+    try {
+      if (entityType === 'product') {
+        const p = await this.prisma.product.findUnique({ where: { id: entityId }, select: { sellerId: true, sellerEmail: true, title: true } });
+        return p ? { id: p.sellerId ?? undefined, email: p.sellerEmail ?? undefined, title: p.title } : null;
+      }
+      if (entityType === 'service') {
+        const s = await this.prisma.service.findUnique({ where: { id: entityId }, select: { providerId: true, providerEmail: true, title: true } });
+        return s ? { id: s.providerId ?? undefined, email: s.providerEmail ?? undefined, title: s.title } : null;
+      }
+      if (entityType === 'project') {
+        const p = await this.prisma.project.findUnique({ where: { id: entityId }, select: { ownerId: true, ownerEmail: true, title: true } });
+        return p ? { id: p.ownerId ?? undefined, email: p.ownerEmail ?? undefined, title: p.title } : null;
+      }
+      if (entityType === 'comment') {
+        const c = await this.prisma.newsComment.findUnique({ where: { id: entityId }, select: { userId: true, content: true } });
+        if (c) {
+          const u = await this.prisma.user.findUnique({ where: { id: c.userId }, select: { email: true } });
+          return { id: c.userId, email: u?.email ?? undefined, title: c.content?.slice(0, 60) };
+        }
+        return null;
+      }
+      if (entityType === 'news') {
+        const n = await this.prisma.news.findUnique({ where: { id: entityId }, select: { authorId: true, title: true } });
+        if (n) {
+          const u = await this.prisma.user.findUnique({ where: { id: n.authorId }, select: { email: true } });
+          return { id: n.authorId, email: u?.email ?? undefined, title: n.title };
+        }
+        return null;
+      }
+    } catch { /* ignore lookup failures */ }
+    return null;
   }
 
   async approve(
