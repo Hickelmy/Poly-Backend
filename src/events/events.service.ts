@@ -4,7 +4,6 @@ import { UserEventDto } from './dto/batch-events.dto';
 
 const ALLOWED_ACTIONS = new Set(['pageview', 'click', 'search', 'filter', 'feature_use']);
 const MAX_BATCH = 100;
-// Retention: events older than 90 days are irrelevant — cleaned up on demand
 const RETENTION_DAYS = 90;
 
 @Injectable()
@@ -20,12 +19,9 @@ export class EventsService {
         sessionId: e.sessionId.slice(0, 36),
         page: e.page.slice(0, 200),
         action: e.action,
-        target: e.target ? e.target.slice(0, 100) : null,
-        // metadata: only allow plain key-value, strip anything that looks like
-        // sensitive field names to enforce data minimisation
-        metadata: e.metadata ? this.sanitiseMetadata(e.metadata) : null,
-        duration: typeof e.duration === 'number' ? Math.min(e.duration, 86400) : null,
-        // trust server time over client clock for integrity
+        target: e.target ? e.target.slice(0, 100) : undefined,
+        metadata: e.metadata ? this.sanitiseMetadata(e.metadata) : undefined,
+        duration: typeof e.duration === 'number' ? Math.min(e.duration, 86400) : undefined,
         createdAt: new Date(),
       }));
 
@@ -43,7 +39,9 @@ export class EventsService {
     if (opts.page) where.page = { contains: opts.page };
     if (opts.action) where.action = opts.action;
 
-    const [events, total] = await Promise.all([
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 3600 * 1000);
+
+    const [events, total, heatmapRaw] = await Promise.all([
       this.prisma.userEvent.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -60,9 +58,15 @@ export class EventsService {
         },
       }),
       this.prisma.userEvent.count({ where }),
+      // For heatmap: all events in last 90 days (only createdAt needed)
+      this.prisma.userEvent.findMany({
+        where: { userId, createdAt: { gte: ninetyDaysAgo } },
+        select: { createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      }),
     ]);
 
-    // Build aggregations so the manager view is useful without rendering 200 raw rows
+    // ── Aggregations from filtered events ──────────────────────────────────
     const pageFreq: Record<string, number> = {};
     const actionFreq: Record<string, number> = {};
     const sessionSet = new Set<string>();
@@ -80,6 +84,18 @@ export class EventsService {
       .slice(0, 10)
       .map(([page, count]) => ({ page, count }));
 
+    // ── Heatmap from last 90 days ──────────────────────────────────────────
+    const daily: Record<string, number> = {};
+    const hourly: number[] = new Array(24).fill(0);
+    const weekday: number[] = new Array(7).fill(0); // 0=Sun … 6=Sat
+
+    for (const e of heatmapRaw) {
+      const date = e.createdAt.toISOString().split('T')[0];
+      daily[date] = (daily[date] ?? 0) + 1;
+      hourly[e.createdAt.getHours()]++;
+      weekday[e.createdAt.getDay()]++;
+    }
+
     return {
       total,
       totalSessions: sessionSet.size,
@@ -87,6 +103,7 @@ export class EventsService {
       topPages,
       actionFreq,
       recent: events.slice(0, 50),
+      heatmap: { daily, hourly, weekday },
     };
   }
 

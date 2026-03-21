@@ -1,13 +1,13 @@
 export class UserEventDto {
-  sessionId: string;
-  page: string;
-  action: string;
+  sessionId!: string;
+  page!: string;
+  action!: string;
   target?: string;
   metadata?: Record<string, any>;
   duration?: number;
-  createdAt?: string; // ISO string from client clock
+  createdAt?: string;
 }
 
 export class BatchEventsDto {
-  events: UserEventDto[];
+  events!: UserEventDto[];
 }

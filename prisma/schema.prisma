@@ -609,6 +609,40 @@ model AuditLog {
 }
 
 // =============================================
+// MODERAÇÃO DE CONTEÚDO
+// =============================================
+
+model ContentModeration {
+  id              String    @id @default(cuid())
+  entityType      String    // 'product' | 'service' | 'project' | 'comment' | 'news'
+  entityId        String
+
+  // Estado de moderação
+  status          String    @default("active") // 'active' | 'restricted' | 'removed' | 'highlighted' | 'approved'
+  managerNotice   String?   // aviso público exibido no conteúdo
+  wasEdited       Boolean   @default(false)    // gestor editou o conteúdo
+  editNote        String?   // nota interna da edição
+
+  // Selo de aprovação
+  approvedAt      DateTime?
+  approvedBy      String?
+  approvedByEmail String?
+  approvalNote    String?
+
+  // Quem moderou por último
+  actorId         String?
+  actorEmail      String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([entityType, entityId])
+  @@index([entityType, status])
+  @@index([entityId])
+  @@index([status])
+}
+
+// =============================================
 // ANALYTICS COMPORTAMENTAL
 // =============================================
 
