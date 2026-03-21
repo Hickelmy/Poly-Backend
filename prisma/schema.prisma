@@ -623,6 +623,9 @@ model ContentModeration {
   wasEdited       Boolean   @default(false)    // gestor editou o conteúdo
   editNote        String?   // nota interna da edição
 
+  // Duração (para highlight/restrict temporários)
+  expiresAt       DateTime?
+
   // Selo de aprovação
   approvedAt      DateTime?
   approvedBy      String?

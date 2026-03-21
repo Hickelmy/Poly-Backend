@@ -8,6 +8,7 @@ export interface ModerationAction {
   managerNotice?: string | null;
   wasEdited?: boolean;
   editNote?: string | null;
+  expiresAt?: Date | null;
   approvedAt?: Date | null;
   approvedBy?: string | null;
   approvedByEmail?: string | null;
