@@ -14,16 +14,18 @@ function transformZone(zone: any, includeAccessCode: boolean = false) {
     polygon_geojson: zone.polygonGeojson,
     center_lat: zone.centerLat,
     center_lng: zone.centerLng,
+    created_by_id: zone.createdById,
+    created_by_email: zone.createdByEmail,
     created_at: zone.createdAt,
     updated_at: zone.updatedAt,
     _count: zone._count,
   };
-  
+
   // Só inclui o código de acesso para admins
   if (includeAccessCode && zone.accessCode) {
     result.access_code = zone.accessCode;
   }
-  
+
   return result;
 }
 
@@ -36,15 +38,17 @@ export class ZonesService {
     description?: string;
     color?: string;
     polygonGeojson?: any;
-    polygon_geojson?: any; // Suporte a snake_case do frontend
+    polygon_geojson?: any;
     centerLat?: number;
-    center_lat?: number; // Suporte a snake_case do frontend
+    center_lat?: number;
     centerLng?: number;
-    center_lng?: number; // Suporte a snake_case do frontend
+    center_lng?: number;
     isPublic?: boolean;
-    is_public?: boolean; // Suporte a snake_case do frontend
+    is_public?: boolean;
     accessCode?: string;
-    access_code?: string; // Suporte a snake_case do frontend
+    access_code?: string;
+    createdById?: string;
+    createdByEmail?: string;
   }) {
     if (!data.name) {
       throw new BadRequestException('Nome da zona é obrigatório');
@@ -79,8 +83,21 @@ export class ZonesService {
         active: true,
         isPublic,
         accessCode: accessCode || null,
+        createdById: data.createdById,
+        createdByEmail: data.createdByEmail,
       },
     });
+
+    // Auto-criar UserZoneAccess com role=ADMIN para o criador
+    if (data.createdById) {
+      await this.prisma.userZoneAccess.create({
+        data: {
+          userId: data.createdById,
+          zoneId: zone.id,
+          role: 'ADMIN',
+        },
+      }).catch(() => {}); // Ignora se ja existe
+    }
 
     return transformZone(zone, true);
   }
@@ -400,8 +417,67 @@ export class ZonesService {
 
     return accesses.map(a => ({
       ...transformZone(a.zone),
+      zone_role: a.role,
       joined_at: a.createdAt,
     }));
+  }
+
+  /** Verifica se o usuario eh admin da zona ou da plataforma */
+  async assertZoneAdminOrPlatformAdmin(userId: string, userRole: string, zoneId: string) {
+    if (userRole === 'ADMIN' || userRole === 'MANAGER') return;
+    const access = await this.prisma.userZoneAccess.findUnique({
+      where: { userId_zoneId: { userId, zoneId } },
+    });
+    if (!access || access.role !== 'ADMIN') {
+      throw new ForbiddenException('Apenas administradores da zona podem realizar esta ação');
+    }
+  }
+
+  // Listar membros de uma zona
+  async getMembers(zoneId: string) {
+    const accesses = await this.prisma.userZoneAccess.findMany({
+      where: { zoneId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+            isVerified: true,
+            lastLoginAt: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return accesses.map((a) => ({
+      id: a.id,
+      user_id: a.userId,
+      zone_id: a.zoneId,
+      role: a.role,
+      name: a.user.name,
+      email: a.user.email,
+      avatar_url: a.user.avatarUrl,
+      is_verified: a.user.isVerified,
+      last_login_at: a.user.lastLoginAt,
+      joined_at: a.createdAt,
+    }));
+  }
+
+  // Remover membro de uma zona
+  async removeMember(zoneId: string, memberId: string) {
+    const access = await this.prisma.userZoneAccess.findFirst({
+      where: { zoneId, userId: memberId },
+    });
+    if (!access) throw new NotFoundException('Membro não encontrado nesta zona');
+
+    await this.prisma.userZoneAccess.delete({
+      where: { userId_zoneId: { userId: memberId, zoneId } },
+    });
+
+    return { success: true, message: 'Membro removido com sucesso' };
   }
 
   // Remove acesso do usuário a uma zona

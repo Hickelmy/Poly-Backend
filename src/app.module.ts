@@ -30,6 +30,8 @@ import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { EventsModule } from './events/events.module';
 import { ContentModerationModule } from './content-moderation/content-moderation.module';
+import { InviteLinksModule } from './invite-links/invite-links.module';
+import { AdminRequestsModule } from './admin-requests/admin-requests.module';
 import { IdempotencyMiddleware } from './common/idempotency.middleware';
 
 @Module({
@@ -73,6 +75,8 @@ import { IdempotencyMiddleware } from './common/idempotency.middleware';
     ModerationModule,
     EventsModule,
     ContentModerationModule,
+    InviteLinksModule,
+    AdminRequestsModule,
   ],
   controllers: [AppController, MetricsController],
   providers: [

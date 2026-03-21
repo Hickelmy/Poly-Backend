@@ -21,6 +21,12 @@ function requireAdminOrManager(role?: string) {
   }
 }
 
+function canCreateZone(role?: string, accountType?: string) {
+  if (role === 'ADMIN' || role === 'MANAGER') return;
+  if (accountType === 'ZONE_ADMIN') return;
+  throw new ForbiddenException('Apenas gestores ou administradores de área podem criar zonas');
+}
+
 @Controller('zones')
 export class ZonesController {
   constructor(private readonly zonesService: ZonesService) {}
@@ -41,7 +47,8 @@ export class ZonesController {
       access_code?: string;
     },
   ) {
-    requireAdminOrManager(req.user?.role);
+    canCreateZone(req.user?.role, req.user?.accountType);
+    const userId = req.user.userId ?? req.user.id;
     return this.zonesService.create({
       name: body.name,
       description: body.description,
@@ -51,6 +58,8 @@ export class ZonesController {
       center_lng: body.center_lng,
       is_public: body.is_public,
       access_code: body.access_code,
+      createdById: userId,
+      createdByEmail: req.user.email,
     });
   }
 
@@ -148,6 +157,28 @@ export class ZonesController {
     requireAdminOrManager(req.user?.role);
     await this.zonesService.delete(id);
     return { success: true, message: 'Zona excluída com sucesso' };
+  }
+
+  // Listar membros de uma zona
+  @Get(':id/members')
+  @UseGuards(JwtAuthGuard)
+  async getMembers(@Request() req: any, @Param('id') id: string) {
+    const userId = req.user.userId ?? req.user.id;
+    await this.zonesService.assertZoneAdminOrPlatformAdmin(userId, req.user.role, id);
+    return this.zonesService.getMembers(id);
+  }
+
+  // Remover membro de uma zona
+  @Delete(':id/members/:memberId')
+  @UseGuards(JwtAuthGuard)
+  async removeMember(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+  ) {
+    const userId = req.user.userId ?? req.user.id;
+    await this.zonesService.assertZoneAdminOrPlatformAdmin(userId, req.user.role, id);
+    return this.zonesService.removeMember(id, memberId);
   }
 }
 

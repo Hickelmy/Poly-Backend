@@ -54,6 +54,9 @@ model User {
   // Acesso a zonas privadas
   zoneAccesses    UserZoneAccess[]
 
+  // Tipo de conta
+  accountType    String   @default("USER") // "USER", "ZONE_ADMIN", "COMPANY"
+
   // Verificação de perfil (selo azul)
   isVerified        Boolean   @default(false)
   verifiedAt        DateTime?
@@ -101,6 +104,10 @@ model Zone {
   centerLat   Float?
   centerLng   Float?
   
+  // Criador/dono da zona
+  createdById    String?
+  createdByEmail String?
+
   // Relations
   residenceUsers User[] @relation("UserResidenceZone")
   currentUsers   User[] @relation("UserCurrentZone")
@@ -109,7 +116,8 @@ model Zone {
   projects       Project[]
   news           News[]
   userAccesses   UserZoneAccess[]
-  
+  inviteLinks    InviteLink[]
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -119,13 +127,68 @@ model UserZoneAccess {
   id        String   @id @default(cuid())
   userId    String
   zoneId    String
-  
+  role      String   @default("MEMBER") // "ADMIN" ou "MEMBER"
+
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   zone      Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  
+
   createdAt DateTime @default(now())
-  
+
   @@unique([userId, zoneId])
+}
+
+// Links de convite para zonas privadas
+model InviteLink {
+  id             String    @id @default(cuid())
+  zoneId         String
+  zone           Zone      @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  code           String    @unique
+  maxUses        Int       @default(0) // 0 = ilimitado
+  usesCount      Int       @default(0)
+  expiresAt      DateTime?
+  createdById    String
+  createdByEmail String?
+  active         Boolean   @default(true)
+  usages         InviteLinkUsage[]
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([zoneId])
+  @@index([code])
+}
+
+model InviteLinkUsage {
+  id           String     @id @default(cuid())
+  inviteLinkId String
+  inviteLink   InviteLink @relation(fields: [inviteLinkId], references: [id], onDelete: Cascade)
+  userId       String
+  userEmail    String?
+
+  createdAt    DateTime   @default(now())
+
+  @@unique([inviteLinkId, userId])
+  @@index([inviteLinkId])
+}
+
+// Solicitações para se tornar Administrador de Área
+model AdminRequest {
+  id           String    @id @default(cuid())
+  email        String
+  name         String
+  phone        String?
+  location     String?
+  objective    String?
+  status       String    @default("pending") // pending, approved, rejected
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  rejectReason String?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+  @@index([email])
 }
 
 model Project {

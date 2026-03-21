@@ -27,7 +27,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // Always fetch role from DB — never trust the role in the token payload
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, accountType: true },
     });
 
     if (!user) {
@@ -38,6 +38,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: user.id,
       email: user.email,
       role: user.role,
+      accountType: user.accountType,
     };
   }
 }

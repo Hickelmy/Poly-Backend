@@ -13,6 +13,10 @@ export class CreateUserDto {
 
   // role is intentionally excluded — always 'USER' on registration
 
+  @IsOptional()
+  @IsString()
+  accountType?: string; // "USER" | "ZONE_ADMIN" | "COMPANY"
+
   // Campos de endereço (já vêm criptografados do frontend)
   @IsOptional()
   @IsString()

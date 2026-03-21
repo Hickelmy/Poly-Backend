@@ -25,11 +25,16 @@ export class UsersService {
 
     // Os dados sensíveis já vêm criptografados do frontend
     // Apenas salvamos no banco (a descriptografia acontece no findOne)
+    const validAccountTypes = ['USER', 'ZONE_ADMIN', 'COMPANY'];
+    const accountType = dto.accountType && validAccountTypes.includes(dto.accountType)
+      ? dto.accountType : 'USER';
+
     const userData: any = {
       email: dto.email,
       passwordHash,
       name: dto.name,
       role: 'USER',
+      accountType,
     };
 
     // Adiciona campos de endereço se fornecidos (já criptografados)
@@ -60,6 +65,7 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        accountType: true,
         avatarUrl: true,
         bannerUrl: true,
         pixKeyRandom: true,
@@ -484,7 +490,7 @@ export class UsersService {
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: {
-        id: true, email: true, name: true, role: true, avatarUrl: true,
+        id: true, email: true, name: true, role: true, accountType: true, avatarUrl: true,
         phone: true, city: true, state: true, createdAt: true, updatedAt: true,
         isBlocked: true, isBanned: true, blockedReason: true, blockedAt: true, blockedBy: true,
         isVerified: true, verifiedAt: true, verifiedByEmail: true,
@@ -495,6 +501,7 @@ export class UsersService {
       ...u,
       full_name: u.name,
       user_role: u.role?.toLowerCase(),
+      account_type: u.accountType,
       avatar_url: u.avatarUrl,
       created_date: u.createdAt,
       is_blocked: u.isBlocked,
