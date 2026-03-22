@@ -255,9 +255,11 @@ export class ProjectsService {
     );
 
     const finalTotal = target_amount ?? computedTotal;
-    
-    // Calcular votos mínimos automaticamente baseado no valor (ignora min_votes se fornecido)
-    const calculatedMinVotes = calculateMinVotes(finalTotal);
+
+    // Usa min_votes do frontend se fornecido, senão calcula automaticamente
+    const finalMinVotes = (min_votes != null && Number(min_votes) >= 1)
+      ? Number(min_votes)
+      : calculateMinVotes(finalTotal);
 
     const finalLat = latitude ?? lat;
     const finalLng = longitude ?? lng;
@@ -287,7 +289,7 @@ export class ProjectsService {
         evidences: evidences ?? [],
         targetAmount: finalTotal,
         currentAmount: current_amount ?? 0,
-        minVotes: calculatedMinVotes, // Usa cálculo automático (ignora min_votes do frontend)
+        minVotes: finalMinVotes,
         votesCount: votes_count ?? 0,
         fundingDeadline: funding_deadline ? new Date(funding_deadline) : null,
         ownerId: owner_id || user.userId,
@@ -306,7 +308,7 @@ export class ProjectsService {
       },
     });
 
-    return this.findOne(created.id);
+    return this.findOne(created.id, user.userId);
   }
 
   async update(id: string, data: any) {
@@ -343,11 +345,9 @@ export class ProjectsService {
     }
     if (target_amount !== undefined) {
       updateData.targetAmount = target_amount;
-      // Recalcular votos mínimos quando o valor muda
-      updateData.minVotes = calculateMinVotes(target_amount);
     }
     if (current_amount !== undefined) updateData.currentAmount = current_amount;
-    // min_votes é sempre calculado automaticamente, nunca atualizado manualmente
+    if (min_votes !== undefined && Number(min_votes) >= 1) updateData.minVotes = Number(min_votes);
     if (votes_count !== undefined) updateData.votesCount = votes_count;
     if (funding_deadline !== undefined) {
       updateData.fundingDeadline = funding_deadline
