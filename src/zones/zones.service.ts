@@ -433,7 +433,7 @@ export class ZonesService {
     }
   }
 
-  // Listar membros de uma zona
+  // Listar membros de uma zona (com codigo de convite usado)
   async getMembers(zoneId: string) {
     const accesses = await this.prisma.userZoneAccess.findMany({
       where: { zoneId },
@@ -452,6 +452,21 @@ export class ZonesService {
       orderBy: { createdAt: 'asc' },
     });
 
+    // Buscar usages de convite para esta zona em uma unica query
+    const usages = await this.prisma.inviteLinkUsage.findMany({
+      where: {
+        inviteLink: { zoneId },
+      },
+      include: {
+        inviteLink: { select: { code: true } },
+      },
+    });
+
+    const usageMap = new Map<string, string>();
+    for (const u of usages) {
+      usageMap.set(u.userId, u.inviteLink.code);
+    }
+
     return accesses.map((a) => ({
       id: a.id,
       user_id: a.userId,
@@ -463,6 +478,7 @@ export class ZonesService {
       is_verified: a.user.isVerified,
       last_login_at: a.user.lastLoginAt,
       joined_at: a.createdAt,
+      invite_code: usageMap.get(a.userId) || null,
     }));
   }
 
