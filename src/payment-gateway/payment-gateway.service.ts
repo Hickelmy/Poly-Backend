@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { calculateTransportType } from '../common/transport.util';
 
 interface AbacatePayBillingResponse {
   data: {
@@ -94,6 +95,8 @@ export class PaymentGatewayService {
     userEmail: string;
     quantity?: number;
     cartItems?: Array<{ product_id: string; quantity: number; price: number }>;
+    delivery_method?: string;
+    delivery_address?: string;
   }) {
     const token = this.getAbacatePayToken();
     const amountInCents = Math.round(data.amount * 100);
@@ -143,6 +146,24 @@ export class PaymentGatewayService {
         const totalQty = data.cartItems
           ? data.cartItems.reduce((s, i) => s + i.quantity, 0)
           : (data.quantity || 1);
+
+        // Buscar produto para auto-calcular transporte e dados do vendedor
+        let transportType: string | null = null;
+        let sellerEmail: string | null = null;
+        let productTitle: string | null = null;
+        let isCardapio = false;
+        if (firstProductId) {
+          const product = await this.prisma.product.findUnique({ where: { id: firstProductId } });
+          if (product) {
+            transportType = data.delivery_method === 'delivery'
+              ? calculateTransportType(product.weightKg, totalQty, product.unitType || 'unidade')
+              : null;
+            sellerEmail = product.sellerEmail || null;
+            productTitle = product.title || null;
+            isCardapio = product.category === 'alimentos';
+          }
+        }
+
         const order = await this.prisma.order.create({
           data: {
             userId: data.userId ?? null,
@@ -153,7 +174,12 @@ export class PaymentGatewayService {
             subtotal: data.amount,
             shippingCost: 0,
             total: data.amount,
-            deliveryMethod: 'pickup',
+            deliveryMethod: data.delivery_method || 'pickup',
+            deliveryAddress: data.delivery_address || null,
+            transportType,
+            sellerEmail,
+            productTitle,
+            isCardapio,
             paymentMethod: 'pix',
             transactionId: result.data.id,
             gatewayProvider: 'abacate_pay',
@@ -495,6 +521,8 @@ export class PaymentGatewayService {
     quantity?: number;
     currency?: string; // Padrão: 'brl'
     cartItems?: Array<{ product_id: string; quantity: number; price: number }>;
+    delivery_method?: string;
+    delivery_address?: string;
   }) {
     // Busca o token do Stripe (env var tem prioridade sobre DB)
     const secretKey = this.getStripeToken();
@@ -630,6 +658,24 @@ export class PaymentGatewayService {
         const totalQty = data.cartItems
           ? data.cartItems.reduce((s, i) => s + i.quantity, 0)
           : (data.quantity || 1);
+
+        // Buscar produto para auto-calcular transporte e dados do vendedor
+        let transportType: string | null = null;
+        let sellerEmail: string | null = null;
+        let productTitle: string | null = null;
+        let isCardapio = false;
+        if (firstProductId) {
+          const product = await this.prisma.product.findUnique({ where: { id: firstProductId } });
+          if (product) {
+            transportType = data.delivery_method === 'delivery'
+              ? calculateTransportType(product.weightKg, totalQty, product.unitType || 'unidade')
+              : null;
+            sellerEmail = product.sellerEmail || null;
+            productTitle = product.title || null;
+            isCardapio = product.category === 'alimentos';
+          }
+        }
+
         const order = await this.prisma.order.create({
           data: {
             userId: data.userId ?? null,
@@ -640,7 +686,12 @@ export class PaymentGatewayService {
             subtotal: data.amount,
             shippingCost: 0,
             total: data.amount,
-            deliveryMethod: 'pickup',
+            deliveryMethod: data.delivery_method || 'pickup',
+            deliveryAddress: data.delivery_address || null,
+            transportType,
+            sellerEmail,
+            productTitle,
+            isCardapio,
             paymentMethod: 'credit_card',
             transactionId: checkoutSession.id,
             gatewayProvider: 'stripe',

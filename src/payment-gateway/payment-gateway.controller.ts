@@ -31,6 +31,8 @@ export class PaymentGatewayController {
       quantity?: number;
       anonymous?: boolean;
       cart_items?: Array<{ product_id: string; quantity: number; price: number }>;
+      delivery_method?: string;
+      delivery_address?: string;
     },
     @Request() req: any,
   ) {
@@ -45,6 +47,8 @@ export class PaymentGatewayController {
       userEmail: req.user.email,
       quantity: data.quantity || 1,
       cartItems: data.cart_items,
+      delivery_method: data.delivery_method,
+      delivery_address: data.delivery_address,
     });
   }
 
@@ -71,6 +75,8 @@ export class PaymentGatewayController {
       quantity?: number;
       currency?: string;
       cart_items?: Array<{ product_id: string; quantity: number; price: number }>;
+      delivery_method?: string;
+      delivery_address?: string;
     },
     @Request() req: any,
   ) {
@@ -87,6 +93,8 @@ export class PaymentGatewayController {
       quantity: data.quantity || 1,
       currency: data.currency,
       cartItems: data.cart_items,
+      delivery_method: data.delivery_method,
+      delivery_address: data.delivery_address,
     });
   }
 

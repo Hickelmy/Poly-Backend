@@ -326,21 +326,34 @@ model Order {
   // Entrega
   deliveryMethod  String   // "delivery" ou "pickup"
   deliveryAddress String?  // Endereço de entrega (criptografado)
-  
+  transportType   String?  // auto-calculado: "moto", "carro", "van", "caminhao"
+
   // Pagamento - apenas tokens
   paymentMethod   String   // "pix", "credit_card", "debit_card", "boleto"
   paymentTokenId  String?  // ID do token de pagamento (se usar token salvo)
   transactionId   String?  // ID da transação no gateway
   gatewayProvider String?  // Nome do gateway usado
-  
-  // Status
-  status          String   @default("pending") // pending, paid, shipped, delivered, cancelled
-  
+
+  // Vendedor
+  sellerEmail     String?
+  productTitle    String?
+  isCardapio      Boolean  @default(false)
+
+  // Aceitação do pedido
+  acceptDeadline    DateTime?
+  acceptedAt        DateTime?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+
+  // Status: pending, awaiting_seller, accepted, rejected, paid, shipped, delivered, cancelled, refunded
+  status          String   @default("pending")
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-  
+
   @@index([userId])
   @@index([status])
+  @@index([sellerEmail, status])
 }
 
 model AppSettings {
