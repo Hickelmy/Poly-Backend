@@ -73,6 +73,17 @@ model User {
   blockedAt      DateTime?
   blockedBy      String?   // ID do gestor que bloqueou/baniu
 
+  // Campos especificos de empresa
+  companyDocumentUrl      String?
+  companyDescription      String?
+  companyCategory         String?
+  companyWebsite          String?
+
+  // Workflow de verificacao de empresa
+  verificationStatus      String    @default("unverified")
+  verificationNote        String?
+  verificationRequestedAt DateTime?
+
   // Audit logs criados por este usuário (ações que ELE fez)
   auditLogs      AuditLog[] @relation("AuditLogActor")
   // Audit logs onde este usuário foi o alvo

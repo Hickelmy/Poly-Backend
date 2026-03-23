@@ -519,6 +519,254 @@ export class UsersService {
     return { success: true };
   }
 
+  // ==================== COMPANY MANAGEMENT ====================
+
+  async listCompanies(limit = 500) {
+    const companies = await this.prisma.user.findMany({
+      where: { accountType: 'COMPANY' },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true, email: true, name: true, role: true, accountType: true, avatarUrl: true,
+        phone: true, city: true, state: true, createdAt: true, updatedAt: true,
+        isBlocked: true, isBanned: true, blockedReason: true, blockedAt: true, blockedBy: true,
+        isVerified: true, verifiedAt: true, verifiedByEmail: true,
+        lastLoginAt: true,
+        companyDocumentUrl: true, companyDescription: true, companyCategory: true, companyWebsite: true,
+        verificationStatus: true, verificationNote: true, verificationRequestedAt: true,
+      },
+    });
+
+    // Fetch product/service/order counts in parallel for all companies
+    const ids = companies.map(c => c.id);
+    const emails = companies.map(c => c.email);
+
+    const [productCounts, serviceCounts, orderAgg] = await Promise.all([
+      this.prisma.product.groupBy({ by: ['sellerId'], where: { sellerId: { in: ids } }, _count: true }),
+      this.prisma.service.groupBy({ by: ['providerId'], where: { providerId: { in: ids } }, _count: true }),
+      this.prisma.order.groupBy({
+        by: ['sellerEmail'],
+        where: { sellerEmail: { in: emails }, status: { notIn: ['cancelled', 'refunded'] } },
+        _count: true,
+        _sum: { total: true },
+      }),
+    ]);
+
+    const prodMap = new Map(productCounts.map(p => [p.sellerId, p._count]));
+    const svcMap = new Map(serviceCounts.map(s => [s.providerId, s._count]));
+    const orderMap = new Map(orderAgg.map(o => [o.sellerEmail, { count: o._count, revenue: o._sum.total || 0 }]));
+
+    return companies.map(c => {
+      const orderData = orderMap.get(c.email) || { count: 0, revenue: 0 };
+      return {
+        id: c.id,
+        email: c.email,
+        full_name: c.name,
+        user_role: c.role?.toLowerCase(),
+        account_type: c.accountType,
+        avatar_url: c.avatarUrl,
+        phone: c.phone,
+        city: c.city,
+        state: c.state,
+        is_blocked: c.isBlocked,
+        is_banned: c.isBanned,
+        blocked_reason: c.blockedReason,
+        blocked_at: c.blockedAt,
+        is_verified: c.isVerified,
+        verified_at: c.verifiedAt,
+        verified_by_email: c.verifiedByEmail,
+        last_login_at: c.lastLoginAt,
+        created_date: c.createdAt,
+        company_document_url: c.companyDocumentUrl,
+        company_description: c.companyDescription,
+        company_category: c.companyCategory,
+        company_website: c.companyWebsite,
+        verification_status: c.verificationStatus,
+        verification_note: c.verificationNote,
+        verification_requested_at: c.verificationRequestedAt,
+        products_count: prodMap.get(c.id) || 0,
+        services_count: svcMap.get(c.id) || 0,
+        orders_count: orderData.count,
+        revenue: orderData.revenue,
+      };
+    });
+  }
+
+  async getCompanyStats(companyId: string) {
+    const company = await this.prisma.user.findUnique({
+      where: { id: companyId },
+      select: { id: true, email: true, accountType: true },
+    });
+    if (!company) throw new NotFoundException('Empresa nao encontrada');
+
+    const [
+      productsActive, productsTotal,
+      servicesActive, servicesTotal,
+      orderAgg, projectsCount,
+    ] = await Promise.all([
+      this.prisma.product.count({ where: { sellerId: companyId, active: true } }),
+      this.prisma.product.count({ where: { sellerId: companyId } }),
+      this.prisma.service.count({ where: { providerId: companyId, active: true } }),
+      this.prisma.service.count({ where: { providerId: companyId } }),
+      this.prisma.order.aggregate({
+        where: { sellerEmail: company.email, status: { notIn: ['cancelled', 'refunded'] } },
+        _count: true,
+        _sum: { total: true, shippingCost: true },
+        _avg: { total: true },
+      }),
+      this.prisma.project.count({ where: { ownerId: companyId } }),
+    ]);
+
+    const grossRevenue = orderAgg._sum.total || 0;
+    const avgTicket = orderAgg._avg.total || 0;
+
+    return {
+      products_active: productsActive,
+      products_total: productsTotal,
+      services_active: servicesActive,
+      services_total: servicesTotal,
+      total_orders: orderAgg._count,
+      gross_revenue: grossRevenue,
+      avg_ticket: avgTicket,
+      projects_count: projectsCount,
+    };
+  }
+
+  async getCompanyProducts(companyId: string) {
+    const products = await this.prisma.product.findMany({
+      where: { sellerId: companyId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return products.map(p => ({
+      id: p.id,
+      title: p.title,
+      description: p.description,
+      price: p.price,
+      category: p.category,
+      images: p.images,
+      active: p.active,
+      quantity_available: p.quantityAvailable,
+      discount_percent: p.discountPercent,
+      created_at: p.createdAt,
+    }));
+  }
+
+  async getCompanyOrders(companyId: string) {
+    const company = await this.ensureExists(companyId);
+    const orders = await this.prisma.order.findMany({
+      where: { sellerEmail: company.email },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return orders.map(o => ({
+      id: o.id,
+      user_email: o.userEmail,
+      product_title: o.productTitle,
+      quantity: o.quantity,
+      subtotal: o.subtotal,
+      shipping_cost: o.shippingCost,
+      total: o.total,
+      delivery_method: o.deliveryMethod,
+      payment_method: o.paymentMethod,
+      status: o.status,
+      is_cardapio: o.isCardapio,
+      created_at: o.createdAt,
+    }));
+  }
+
+  async getCompanyServices(companyId: string) {
+    const services = await this.prisma.service.findMany({
+      where: { providerId: companyId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return services.map(s => ({
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      service_type: s.serviceType,
+      price_per_hour: s.pricePerHour,
+      price_per_day: s.pricePerDay,
+      price_per_service: s.pricePerService,
+      images: s.images,
+      active: s.active,
+      rating: s.rating,
+      reviews_count: s.reviewsCount,
+      created_at: s.createdAt,
+    }));
+  }
+
+  async getCompanyProjects(companyId: string) {
+    const projects = await this.prisma.project.findMany({
+      where: { ownerId: companyId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return projects.map(p => ({
+      id: p.id,
+      title: p.title,
+      short_description: p.shortDescription,
+      category: p.category,
+      status: p.status,
+      image_url: p.imageUrl,
+      target_amount: p.targetAmount,
+      current_amount: p.currentAmount,
+      votes_count: p.votesCount,
+      created_at: p.createdAt,
+    }));
+  }
+
+  async updateVerificationStatus(
+    companyId: string, status: string, note: string | undefined,
+    actorId: string, actorEmail: string,
+  ) {
+    const company = await this.ensureExists(companyId);
+    const validStatuses = ['unverified', 'pending_review', 'documents_requested', 'verified', 'rejected'];
+    if (!validStatuses.includes(status)) {
+      throw new ConflictException('Status de verificacao invalido');
+    }
+
+    const updateData: any = { verificationStatus: status, verificationNote: note || null };
+    if (status === 'verified') {
+      updateData.isVerified = true;
+      updateData.verifiedAt = new Date();
+      updateData.verifiedBy = actorId;
+      updateData.verifiedByEmail = actorEmail;
+    } else if (status === 'rejected' || status === 'unverified') {
+      updateData.isVerified = false;
+      updateData.verifiedAt = null;
+      updateData.verifiedBy = null;
+      updateData.verifiedByEmail = null;
+    }
+
+    const updated = await this.prisma.user.update({ where: { id: companyId }, data: updateData });
+    await this.createAuditLog({
+      actorId, actorEmail,
+      targetId: companyId, targetEmail: company.email,
+      action: `verification_${status}`,
+      entity: 'User', entityId: companyId,
+      details: { status, note },
+    });
+    return { success: true, verification_status: status };
+  }
+
+  async requestDocuments(companyId: string, note: string, actorId: string, actorEmail: string) {
+    const company = await this.ensureExists(companyId);
+    await this.prisma.user.update({
+      where: { id: companyId },
+      data: { verificationStatus: 'documents_requested', verificationNote: note },
+    });
+    await this.createAuditLog({
+      actorId, actorEmail,
+      targetId: companyId, targetEmail: company.email,
+      action: 'request_documents',
+      entity: 'User', entityId: companyId,
+      details: { note },
+    });
+    return { success: true, verification_status: 'documents_requested' };
+  }
+
   private async ensureExists(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true, email: true } });
     if (!user) throw new NotFoundException('Usuário não encontrado');

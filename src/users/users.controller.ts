@@ -36,6 +36,66 @@ export class UsersController {
     return this.usersService.findOne(req.user!.userId);
   }
 
+  // ==================== COMPANY ENDPOINTS (must be before :id) ====================
+
+  @Get('companies')
+  listCompanies(@Req() req: RequestWithUser, @Query('limit') limit?: string) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.listCompanies(limit ? parseInt(limit) : 500);
+  }
+
+  @Get('companies/:id/stats')
+  getCompanyStats(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.getCompanyStats(id);
+  }
+
+  @Get('companies/:id/products')
+  getCompanyProducts(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.getCompanyProducts(id);
+  }
+
+  @Get('companies/:id/orders')
+  getCompanyOrders(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.getCompanyOrders(id);
+  }
+
+  @Get('companies/:id/services')
+  getCompanyServices(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.getCompanyServices(id);
+  }
+
+  @Get('companies/:id/projects')
+  getCompanyProjects(@Param('id') id: string, @Req() req: RequestWithUser) {
+    if (!isPrivileged(req.user?.role)) throw new ForbiddenException('Acesso negado');
+    return this.usersService.getCompanyProjects(id);
+  }
+
+  @Post('companies/:id/verification')
+  updateVerificationStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string; note?: string },
+    @Req() req: RequestWithUser,
+  ) {
+    if (!isManager(req.user?.role)) throw new ForbiddenException('Apenas gestores podem alterar verificacao');
+    return this.usersService.updateVerificationStatus(id, body.status, body.note, req.user!.userId, req.user!.email);
+  }
+
+  @Post('companies/:id/request-documents')
+  requestDocuments(
+    @Param('id') id: string,
+    @Body() body: { note: string },
+    @Req() req: RequestWithUser,
+  ) {
+    if (!isManager(req.user?.role)) throw new ForbiddenException('Apenas gestores podem solicitar documentos');
+    return this.usersService.requestDocuments(id, body.note, req.user!.userId, req.user!.email);
+  }
+
+  // ==================== USER ENDPOINTS ====================
+
   @Get(':id')
   findOne(@Param('id') id: string, @Req() req: RequestWithUser) {
     if (req.user?.userId !== id && !isPrivileged(req.user?.role)) {
