@@ -45,6 +45,23 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   houseNumber?: string;
+
+  // Campos de empresa
+  @IsOptional()
+  @IsString()
+  companyDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  companyCategory?: string;
+
+  @IsOptional()
+  @IsString()
+  companyWebsite?: string;
+
+  @IsOptional()
+  @IsString()
+  companyDocumentUrl?: string;
 }
 
 

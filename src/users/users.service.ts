@@ -46,6 +46,12 @@ export class UsersService {
     if (dto.street) userData.street = dto.street;
     if (dto.houseNumber) userData.houseNumber = dto.houseNumber;
 
+    // Campos especificos de empresa
+    if (dto.companyDescription) userData.companyDescription = dto.companyDescription;
+    if (dto.companyCategory) userData.companyCategory = dto.companyCategory;
+    if (dto.companyWebsite) userData.companyWebsite = dto.companyWebsite;
+    if (dto.companyDocumentUrl) userData.companyDocumentUrl = dto.companyDocumentUrl;
+
     return this.prisma.user.create({
       data: userData,
     });
@@ -487,6 +493,7 @@ export class UsersService {
 
   async listUsers(limit = 500) {
     const users = await this.prisma.user.findMany({
+      where: { accountType: { not: 'COMPANY' } },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: {
