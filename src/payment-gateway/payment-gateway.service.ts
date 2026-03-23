@@ -244,10 +244,17 @@ export class PaymentGatewayService {
         const order = await this.prisma.order.findFirst({
           where: { transactionId: pixId },
         });
-        if (order && order.status !== 'paid') {
+        if (order && order.status !== 'paid' && order.status !== 'awaiting_seller') {
+          // Calcular deadline de aceitacao
+          const deadlineMinutes = order.isCardapio ? 15 : 24 * 60;
+          const acceptDeadline = new Date(Date.now() + deadlineMinutes * 60 * 1000);
+
           await this.prisma.order.update({
             where: { id: order.id },
-            data: { status: 'paid' },
+            data: {
+              status: 'awaiting_seller',
+              acceptDeadline,
+            },
           });
           if (order.productId && order.quantity) {
             const product = await this.prisma.product.findUnique({
@@ -795,9 +802,11 @@ export class PaymentGatewayService {
         });
 
         if (order) {
+          const dlMinutes = order.isCardapio ? 15 : 24 * 60;
+          const dlDeadline = new Date(Date.now() + dlMinutes * 60 * 1000);
           await this.prisma.order.update({
             where: { id: order.id },
-            data: { status: 'paid' },
+            data: { status: 'awaiting_seller', acceptDeadline: dlDeadline },
           });
 
           // Se o pagamento foi aprovado, desconta a quantidade do produto
@@ -868,9 +877,11 @@ export class PaymentGatewayService {
         });
 
         if (order) {
+          const piDlMinutes = order.isCardapio ? 15 : 24 * 60;
+          const piDeadline = new Date(Date.now() + piDlMinutes * 60 * 1000);
           await this.prisma.order.update({
             where: { id: order.id },
-            data: { status: 'paid' },
+            data: { status: 'awaiting_seller', acceptDeadline: piDeadline },
           });
 
           // Se o pagamento foi aprovado, desconta a quantidade do produto

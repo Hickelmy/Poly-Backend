@@ -32,6 +32,8 @@ import { EventsModule } from './events/events.module';
 import { ContentModerationModule } from './content-moderation/content-moderation.module';
 import { InviteLinksModule } from './invite-links/invite-links.module';
 import { AdminRequestsModule } from './admin-requests/admin-requests.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { OrdersModule } from './orders/orders.module';
 import { IdempotencyMiddleware } from './common/idempotency.middleware';
 
 @Module({
@@ -77,6 +79,8 @@ import { IdempotencyMiddleware } from './common/idempotency.middleware';
     ContentModerationModule,
     InviteLinksModule,
     AdminRequestsModule,
+    ScheduleModule.forRoot(),
+    OrdersModule,
   ],
   controllers: [AppController, MetricsController],
   providers: [
